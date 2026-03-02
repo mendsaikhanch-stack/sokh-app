@@ -6,7 +6,7 @@ import {
   Battery, Cpu, Package, MessageCircle, Star, CreditCard, Banknote, QrCode,
   Calendar, Shield, Truck, Award, Camera, Share2, ExternalLink,
   AlertTriangle, Bell, Send, Play, Pause, RefreshCw, Timer, TrendingUp,
-  Eye, Copy, Link, Globe, Zap, ChevronDown, ChevronUp, Image
+  Eye, Copy, Link, Globe, Zap, ChevronDown, ChevronUp, Image, Fingerprint, KeyRound
 } from "lucide-react";
 
 /* ==================== SOCIAL ICONS ==================== */
@@ -126,6 +126,13 @@ deliveryTracking:"Хүргэлт хянах",deliveryStatus:"Хүргэлтий�
 statusPreparing:"Бэлтгэж байна",statusShipped:"Илгээсэн",statusDelivering:"Хүргэж байна",statusDelivered:"Хүргэгдсэн",
 estimatedDelivery:"Хүрэх хугацаа",deliveryFree:"Үнэгүй",deliveryTotal:"Хүргэлтийн төлбөр",
 freeDeliveryOver:"100,000₮-с дээш захиалгад УБ хүргэлт үнэгүй",
+// Passkey auth
+passkey:"Passkey",passkeyLogin:"Passkey-ээр нэвтрэх",passkeyRegister:"Passkey бүртгэх",
+passkeyRegisterDesc:"Хурууны хээ эсвэл нүүр таних ашиглан хурдан нэвтрэх",
+passkeySuccess:"Passkey амжилттай бүртгэгдлээ!",passkeyError:"Passkey алдаа гарлаа",
+passkeyNotSupported:"Таны browser Passkey дэмждэггүй",passkeyLoginSuccess:"Амжилттай нэвтэрлээ!",
+passkeyOrEmail:"эсвэл",registerPasskey:"Passkey бүртгэх",passkeyName:"Таны нэр",
+passkeyRegistered:"Passkey бүртгэгдсэн",usePasskey:"Passkey ашиглах",
 },en:{
 brand:"444 Prius Parts & Service",home:"Home",parts:"Parts",services:"Services",gallery:"Gallery",contact:"Contact",
 addToCart:"Add to Cart",yourCart:"Your Cart",total:"Total",placeOrder:"Place Order",cartEmpty:"Cart is empty",
@@ -191,6 +198,13 @@ deliveryTracking:"Track Delivery",deliveryStatus:"Delivery Status",
 statusPreparing:"Preparing",statusShipped:"Shipped",statusDelivering:"Delivering",statusDelivered:"Delivered",
 estimatedDelivery:"Estimated delivery",deliveryFree:"Free",deliveryTotal:"Delivery fee",
 freeDeliveryOver:"Free UB delivery on orders over 100,000₮",
+// Passkey auth
+passkey:"Passkey",passkeyLogin:"Sign in with Passkey",passkeyRegister:"Register Passkey",
+passkeyRegisterDesc:"Use fingerprint or face recognition for quick sign-in",
+passkeySuccess:"Passkey registered successfully!",passkeyError:"Passkey error occurred",
+passkeyNotSupported:"Your browser doesn't support Passkeys",passkeyLoginSuccess:"Signed in successfully!",
+passkeyOrEmail:"or",registerPasskey:"Register Passkey",passkeyName:"Your name",
+passkeyRegistered:"Passkey registered",usePasskey:"Use Passkey",
 }};
 
 /* ==================== BUSINESS & DATA ==================== */
@@ -305,6 +319,83 @@ export default function PriusShop(){
       cost:"45,000-120,000₮",urgency:"high",date:"2026-02-24",files:[]},
   ]);
 
+  const addToast=useCallback(m=>{const id=Date.now();setToasts(p=>[...p,{id,m}]);setTimeout(()=>setToasts(p=>p.filter(x=>x.id!==id)),2500);},[]);
+  // Passkey auth state
+  const[authMode,setAuthMode]=useState("login"); // "login" | "register" | "passkey-register"
+  const[passkeyLoading,setPasskeyLoading]=useState(false);
+  const[passkeySupported,setPasskeySupported]=useState(false);
+  const[storedPasskeys,setStoredPasskeys]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem("passkeys")||"[]");}catch{return[];}
+  });
+
+  useEffect(()=>{
+    setPasskeySupported(!!window.PublicKeyCredential&&typeof window.PublicKeyCredential==="function");
+  },[]);
+
+  const savePasskeys=useCallback((pks)=>{setStoredPasskeys(pks);localStorage.setItem("passkeys",JSON.stringify(pks));},[]);
+
+  const bufToB64=buf=>btoa(String.fromCharCode(...new Uint8Array(buf)));
+  const b64ToBuf=b64=>{const s=atob(b64);return Uint8Array.from(s,c=>c.charCodeAt(0)).buffer;};
+
+  const passkeyRegister=useCallback(async(name)=>{
+    if(!passkeySupported){addToast(T[lang].passkeyNotSupported);return false;}
+    setPasskeyLoading(true);
+    try{
+      const userId=new Uint8Array(32);crypto.getRandomValues(userId);
+      const challenge=new Uint8Array(32);crypto.getRandomValues(challenge);
+      const credential=await navigator.credentials.create({publicKey:{
+        challenge,
+        rp:{name:"444 Prius Сэлбэг",id:window.location.hostname||"localhost"},
+        user:{id:userId,name:name||"user",displayName:name||"User"},
+        pubKeyCredParams:[{alg:-7,type:"public-key"},{alg:-257,type:"public-key"}],
+        authenticatorSelection:{authenticatorAttachment:"platform",residentKey:"preferred",userVerification:"preferred"},
+        timeout:60000,attestation:"none"
+      }});
+      if(credential){
+        const pk={id:bufToB64(credential.rawId),name:name||"User",isAdmin:name==="Admin",createdAt:new Date().toISOString()};
+        const updated=[...storedPasskeys,pk];
+        savePasskeys(updated);
+        setUser({name:pk.name,isAdmin:pk.isAdmin});
+        addToast(T[lang].passkeySuccess);
+        setPasskeyLoading(false);return true;
+      }
+    }catch(e){
+      console.error("Passkey registration error:",e);
+      addToast(T[lang].passkeyError);
+    }
+    setPasskeyLoading(false);return false;
+  },[passkeySupported,storedPasskeys,savePasskeys,lang,addToast]);
+
+  const passkeyLogin=useCallback(async()=>{
+    if(!passkeySupported){addToast(T[lang].passkeyNotSupported);return false;}
+    if(storedPasskeys.length===0)return false;
+    setPasskeyLoading(true);
+    try{
+      const challenge=new Uint8Array(32);crypto.getRandomValues(challenge);
+      const allowCredentials=storedPasskeys.map(pk=>({id:b64ToBuf(pk.id),type:"public-key"}));
+      const assertion=await navigator.credentials.get({publicKey:{
+        challenge,
+        rpId:window.location.hostname||"localhost",
+        allowCredentials,
+        userVerification:"preferred",
+        timeout:60000
+      }});
+      if(assertion){
+        const matchId=bufToB64(assertion.rawId);
+        const matched=storedPasskeys.find(pk=>pk.id===matchId);
+        if(matched){
+          setUser({name:matched.name,isAdmin:matched.isAdmin});
+          addToast(T[lang].passkeyLoginSuccess);
+          setPasskeyLoading(false);return true;
+        }
+      }
+    }catch(e){
+      console.error("Passkey login error:",e);
+      addToast(T[lang].passkeyError);
+    }
+    setPasskeyLoading(false);return false;
+  },[passkeySupported,storedPasskeys,lang,addToast]);
+
   const t=T[lang];const cartTotal=cart.reduce((s,i)=>s+i.price*i.qty,0);const cartCount=cart.reduce((s,i)=>s+i.qty,0);
   const deliveryFee=deliveryMethod==="pickup"?0:deliveryMethod==="express"?15000:deliveryMethod==="province"?15000:deliveryMethod==="courier"?20000:cartTotal>=100000?0:5000;
   const grandTotal=cartTotal+deliveryFee;
@@ -331,7 +422,6 @@ export default function PriusShop(){
     setMeta('og:type','website');
     setMeta('og:url',BIZ.facebook||'');
   },[t.brand,BIZ.fbPixelId,BIZ.phone,BIZ.facebook]);
-  const addToast=useCallback(m=>{const id=Date.now();setToasts(p=>[...p,{id,m}]);setTimeout(()=>setToasts(p=>p.filter(x=>x.id!==id)),2500);},[]);
   const navTo=p=>{setPage(p);setShowCheckout(false);setMobileMenu(false);window.scrollTo(0,0);};
 
   const filtered=products.filter(p=>{const n=lang==="mn"?p.name.mn:p.name.en;
@@ -798,7 +888,8 @@ export default function PriusShop(){
             <button onClick={()=>setLang(lang==="mn"?"en":"mn")} className={`px-2 py-1 rounded text-xs font-medium ${aL} text-amber-500`}>{lang==="mn"?"EN":"MN"}</button>
             <button onClick={()=>setShowCart(true)} className="p-2 rounded-lg relative"><ShoppingCart size={18}/>{cartCount>0&&<span className="absolute -top-0.5 -right-0.5 bg-amber-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">{cartCount}</span>}</button>
             {user?<>{user.isAdmin&&<button onClick={()=>setAdminView(true)} className="px-2 py-1 rounded text-xs bg-amber-500 text-white">{t.admin}</button>}<button onClick={()=>setUser(null)} className={txS}><LogOut size={17}/></button></>
-            :<button onClick={()=>setShowAuth(true)} className="hidden md:block px-3 py-1.5 rounded-lg text-sm bg-amber-500 text-white">{t.login}</button>}
+            :<>{passkeySupported&&storedPasskeys.length>0&&<button onClick={async()=>{const ok=await passkeyLogin();if(!ok)setShowAuth(true);}} className="hidden md:block p-2 rounded-lg hover:bg-amber-500/10 text-amber-500" title={t.passkeyLogin}><Fingerprint size={18}/></button>}
+            <button onClick={()=>setShowAuth(true)} className="hidden md:block px-3 py-1.5 rounded-lg text-sm bg-amber-500 text-white">{t.login}</button></>}
             <button onClick={()=>setMobileMenu(true)} className="md:hidden p-2"><Menu size={20}/></button>
           </div>
         </div>
@@ -841,14 +932,66 @@ export default function PriusShop(){
       </div>}
 
       {/* AUTH */}
-      {showAuth&&<div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={()=>setShowAuth(false)}><div className="absolute inset-0 bg-black/50"/>
+      {showAuth&&<div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={()=>{setShowAuth(false);setAuthMode("login");}}><div className="absolute inset-0 bg-black/50"/>
         <div className={`relative ${cd} rounded-2xl p-6 w-full max-w-sm shadow-2xl`} onClick={e=>e.stopPropagation()}>
-          <button onClick={()=>setShowAuth(false)} className="absolute top-3 right-3"><X size={18}/></button>
-          <h3 className="text-xl font-bold mb-4 text-amber-500">{t.login}</h3>
-          <input className={`w-full px-3 py-2 rounded-lg border mb-3 ${inp}`} placeholder={t.email} id="ae"/>
-          <input className={`w-full px-3 py-2 rounded-lg border mb-4 ${inp}`} placeholder={t.password} type="password" id="ap"/>
-          <button onClick={()=>{const e=document.getElementById("ae")?.value,p=document.getElementById("ap")?.value;if(e==="admin@shop.mn"&&p==="admin123")setUser({name:"Admin",isAdmin:true});else if(e)setUser({name:e.split("@")[0],isAdmin:false});setShowAuth(false);}} className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold">{t.login}</button>
-          <p className={`text-xs mt-3 ${txS} text-center`}>Админ: admin@shop.mn / admin123</p>
+          <button onClick={()=>{setShowAuth(false);setAuthMode("login");}} className="absolute top-3 right-3"><X size={18}/></button>
+          <h3 className="text-xl font-bold mb-4 text-amber-500 flex items-center gap-2">
+            {authMode==="passkey-register"?<><KeyRound size={22}/>{t.registerPasskey}</>:<><User size={22}/>{t.login}</>}
+          </h3>
+
+          {/* Passkey login button */}
+          {authMode==="login"&&passkeySupported&&storedPasskeys.length>0&&<>
+            <button onClick={async()=>{const ok=await passkeyLogin();if(ok){setShowAuth(false);setAuthMode("login");}}}
+              disabled={passkeyLoading}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold flex items-center justify-center gap-2 mb-3 transition-all disabled:opacity-50">
+              {passkeyLoading?<RefreshCw size={18} className="animate-spin"/>:<Fingerprint size={20}/>}
+              {t.passkeyLogin}
+            </button>
+            <div className="flex items-center gap-3 mb-3"><div className={`flex-1 border-t ${bd}`}/><span className={`text-xs ${txS}`}>{t.passkeyOrEmail}</span><div className={`flex-1 border-t ${bd}`}/></div>
+          </>}
+
+          {/* Email/password login */}
+          {authMode==="login"&&<>
+            <input className={`w-full px-3 py-2 rounded-lg border mb-3 ${inp}`} placeholder={t.email} id="ae"/>
+            <input className={`w-full px-3 py-2 rounded-lg border mb-4 ${inp}`} placeholder={t.password} type="password" id="ap"/>
+            <button onClick={()=>{const e=document.getElementById("ae")?.value,p=document.getElementById("ap")?.value;if(e==="admin@shop.mn"&&p==="admin123")setUser({name:"Admin",isAdmin:true});else if(e)setUser({name:e.split("@")[0],isAdmin:false});setShowAuth(false);setAuthMode("login");}} className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold">{t.login}</button>
+            <p className={`text-xs mt-3 ${txS} text-center`}>Админ: admin@shop.mn / admin123</p>
+
+            {/* Register passkey link */}
+            {passkeySupported&&<div className="mt-4 pt-3 border-t border-dashed" style={{borderColor:"rgba(245,158,11,0.3)"}}>
+              <button onClick={()=>setAuthMode("passkey-register")}
+                className={`w-full py-2.5 rounded-xl border-2 border-amber-500/50 hover:border-amber-500 font-medium text-sm flex items-center justify-center gap-2 transition-all ${dark?"text-amber-400":"text-amber-600"}`}>
+                <Fingerprint size={18}/>{t.registerPasskey}
+              </button>
+              <p className={`text-xs mt-2 ${txS} text-center`}>{t.passkeyRegisterDesc}</p>
+            </div>}
+          </>}
+
+          {/* Passkey registration */}
+          {authMode==="passkey-register"&&<>
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center">
+                <Fingerprint size={32} className="text-amber-500"/>
+              </div>
+            </div>
+            <p className={`text-sm mb-4 text-center ${txS}`}>{t.passkeyRegisterDesc}</p>
+            <input className={`w-full px-3 py-2 rounded-lg border mb-4 ${inp}`} placeholder={t.passkeyName} id="pk-name"/>
+            <button onClick={async()=>{const n=document.getElementById("pk-name")?.value;if(!n){addToast(t.passkeyName);return;}const ok=await passkeyRegister(n);if(ok){setShowAuth(false);setAuthMode("login");}}}
+              disabled={passkeyLoading}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold flex items-center justify-center gap-2 mb-3 transition-all disabled:opacity-50">
+              {passkeyLoading?<RefreshCw size={18} className="animate-spin"/>:<KeyRound size={18}/>}
+              {t.passkeyRegister}
+            </button>
+            <button onClick={()=>setAuthMode("login")} className={`w-full py-2 text-sm ${txS} hover:text-amber-500 transition-colors`}>{t.cancel}</button>
+
+            {storedPasskeys.length>0&&<div className="mt-3 pt-3 border-t border-dashed" style={{borderColor:"rgba(245,158,11,0.3)"}}>
+              <p className={`text-xs font-medium mb-2 ${txS}`}>{t.passkeyRegistered}:</p>
+              {storedPasskeys.map((pk,i)=><div key={i} className={`flex items-center gap-2 text-xs py-1 ${txS}`}>
+                <Fingerprint size={14} className="text-amber-500"/><span>{pk.name}</span>
+                <span className="opacity-50">({new Date(pk.createdAt).toLocaleDateString()})</span>
+              </div>)}
+            </div>}
+          </>}
         </div>
       </div>}
 
