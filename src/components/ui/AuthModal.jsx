@@ -1,8 +1,32 @@
+import { useState } from "react";
 import { X } from "lucide-react";
 import useApp from "../../hooks/useApp";
 
 export default function AuthModal() {
-  const { cd, inp, txS, t, setUser, setShowAuth } = useApp();
+  const { cd, inp, txS, t, setShowAuth, loginUser, registerUser, addToast } = useApp();
+  const [mode, setMode] = useState("login"); // login | register
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!email || !password || (mode === "register" && !name)) return;
+    setLoading(true);
+    try {
+      if (mode === "login") {
+        await loginUser(email, password);
+      } else {
+        await registerUser(name, email, password);
+      }
+      setShowAuth(false);
+    } catch (err) {
+      addToast(err.message || "Error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -19,33 +43,45 @@ export default function AuthModal() {
         >
           <X size={18} />
         </button>
-        <h3 className="text-xl font-bold mb-4 text-amber-500">{t.login}</h3>
+        <h3 className="text-xl font-bold mb-4 text-amber-500">
+          {mode === "login" ? t.login : (t.register || "Register")}
+        </h3>
+        {mode === "register" && (
+          <input
+            className={`w-full px-3 py-2 rounded-lg border mb-3 ${inp}`}
+            placeholder={t.name}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        )}
         <input
           className={`w-full px-3 py-2 rounded-lg border mb-3 ${inp}`}
           placeholder={t.email}
-          id="ae"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
         />
         <input
           className={`w-full px-3 py-2 rounded-lg border mb-4 ${inp}`}
           placeholder={t.password}
           type="password"
-          id="ap"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
         />
         <button
-          onClick={() => {
-            const e = document.getElementById("ae")?.value;
-            const p = document.getElementById("ap")?.value;
-            if (e === "admin@shop.mn" && p === "admin123")
-              setUser({ name: "Admin", isAdmin: true });
-            else if (e) setUser({ name: e.split("@")[0], isAdmin: false });
-            setShowAuth(false);
-          }}
-          className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold"
+          onClick={handleSubmit}
+          disabled={loading}
+          className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold disabled:opacity-50"
         >
-          {t.login}
+          {loading ? "..." : mode === "login" ? t.login : (t.register || "Register")}
         </button>
-        <p className={`text-xs mt-3 ${txS} text-center`}>
-          Админ: admin@shop.mn / admin123
+        <p
+          className={`text-xs mt-3 ${txS} text-center cursor-pointer hover:text-amber-500`}
+          onClick={() => setMode(mode === "login" ? "register" : "login")}
+        >
+          {mode === "login"
+            ? (t.noAccount || "Don't have an account? Register")
+            : (t.hasAccount || "Already have an account? Login")}
         </p>
       </div>
     </div>

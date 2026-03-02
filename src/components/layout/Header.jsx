@@ -9,7 +9,7 @@ export default function Header() {
     dark, setDark, lang, setLang, page, hdr, bd, txS, inp, aL,
     searchQ, setSearchQ, setPage, navTo,
     cartCount, setShowCart, setShowAuth, setAdminView, setMobileMenu,
-    user, setUser, SOCIALS, t,
+    user, logoutUser, SOCIALS, t,
   } = useApp();
 
   return (
@@ -106,7 +106,7 @@ export default function Header() {
                   {t.admin}
                 </button>
               )}
-              <button onClick={() => setUser(null)} className={txS}>
+              <button onClick={logoutUser} className={txS}>
                 <LogOut size={17} />
               </button>
             </>

@@ -28,7 +28,7 @@ export default function AlertsTab() {
           .filter((p) => p.stock <= LOW_STOCK_THRESHOLD)
           .map((p) => (
             <div
-              key={p.id}
+              key={p._id || p.id}
               className={`${cd} rounded-xl border ${
                 p.stock === 0 ? "border-red-400" : "border-orange-300"
               } p-4 flex items-center justify-between`}

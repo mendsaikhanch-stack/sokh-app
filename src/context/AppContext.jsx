@@ -5,13 +5,14 @@ import { mockOrders } from "../data/orders";
 import { DEFAULT_BIZ, getSOCIALS } from "../data/business";
 import { initScheduledPosts } from "../data/scheduledPosts";
 import { fmt } from "../utils/helpers";
+import * as api from "../api/client";
 
 function cartR(s, a) {
   switch (a.type) {
     case "ADD": {
-      const e = s.find((i) => i.id === a.p.id);
+      const e = s.find((i) => i.id === a.p.id || i._id === a.p._id);
       return e
-        ? s.map((i) => (i.id === a.p.id ? { ...i, qty: i.qty + a.q } : i))
+        ? s.map((i) => ((i.id === a.p.id || i._id === a.p._id) ? { ...i, qty: i.qty + a.q } : i))
         : [...s, { ...a.p, qty: a.q }];
     }
     case "REMOVE":
@@ -42,7 +43,7 @@ export function AppProvider({ children }) {
   const [cart, dc] = useReducer(cartR, []);
   const [wishIds, setWishIds] = useState([]);
   const [toasts, setToasts] = useState([]);
-  const [products] = useState(initProducts);
+  const [products, setProducts] = useState(initProducts);
   const [searchQ, setSearchQ] = useState("");
   const [selModel, setSelModel] = useState(null);
   const [selCat, setSelCat] = useState(null);
@@ -71,15 +72,9 @@ export function AppProvider({ children }) {
   });
   const [schedulerOn, setSchedulerOn] = useState(true);
   const [scheduledPosts, setScheduledPosts] = useState(initScheduledPosts);
-  const [stockAlerts] = useState(
-    products.filter((p) => p.stock <= LOW_STOCK_THRESHOLD && p.stock > 0)
-  );
+  const [stockAlerts, setStockAlerts] = useState([]);
   const [showShareModal, setShowShareModal] = useState(null);
-  const [notifications, setNotifications] = useState(
-    products
-      .filter((p) => p.stock <= LOW_STOCK_THRESHOLD)
-      .map((p, i) => ({ id: i, product: p, read: false, time: "Өнөөдөр" }))
-  );
+  const [notifications, setNotifications] = useState([]);
   const [showNotifs, setShowNotifs] = useState(false);
   const [BIZ, setBIZ] = useState(DEFAULT_BIZ);
   const SOCIALS = getSOCIALS(BIZ);
@@ -124,6 +119,94 @@ export function AppProvider({ children }) {
       files: [],
     },
   ]);
+
+  // --- API data loading on mount ---
+  useEffect(() => {
+    // Load products from API
+    api.fetchProducts()
+      .then((data) => {
+        setProducts(data);
+        const lowStock = data.filter((p) => p.stock <= LOW_STOCK_THRESHOLD && p.stock > 0);
+        setStockAlerts(lowStock);
+        setNotifications(
+          data
+            .filter((p) => p.stock <= LOW_STOCK_THRESHOLD)
+            .map((p, i) => ({ id: i, product: p, read: false, time: "Өнөөдөр" }))
+        );
+      })
+      .catch(() => {
+        // Fallback to mock data
+        setStockAlerts(initProducts.filter((p) => p.stock <= LOW_STOCK_THRESHOLD && p.stock > 0));
+        setNotifications(
+          initProducts
+            .filter((p) => p.stock <= LOW_STOCK_THRESHOLD)
+            .map((p, i) => ({ id: i, product: p, read: false, time: "Өнөөдөр" }))
+        );
+      });
+
+    // Load settings from API
+    api.fetchSettings()
+      .then((data) => { if (data && data.name) setBIZ(data); })
+      .catch(() => {});
+
+    // Restore JWT session
+    const token = localStorage.getItem('token');
+    if (token) {
+      api.getMe()
+        .then((u) => setUser(u))
+        .catch(() => { api.setToken(null); });
+    }
+  }, []);
+
+  // --- Async action helpers ---
+  const loginUser = useCallback(async (email, password) => {
+    const { token, user: u } = await api.login(email, password);
+    api.setToken(token);
+    setUser(u);
+    return u;
+  }, []);
+
+  const registerUser = useCallback(async (name, email, password) => {
+    const { token, user: u } = await api.register(name, email, password);
+    api.setToken(token);
+    setUser(u);
+    return u;
+  }, []);
+
+  const logoutUser = useCallback(() => {
+    api.setToken(null);
+    setUser(null);
+    setAdminView(false);
+  }, []);
+
+  const placeOrderAPI = useCallback(async (orderData) => {
+    const order = await api.placeOrder(orderData);
+    return order;
+  }, []);
+
+  const fetchOrdersAPI = useCallback(async () => {
+    const data = await api.fetchOrders();
+    setOrders(data);
+    return data;
+  }, []);
+
+  const updateOrderStatusAPI = useCallback(async (id, status) => {
+    const updated = await api.updateOrderStatus(id, status);
+    setOrders((prev) => prev.map((o) => (o._id === id ? updated : o)));
+    return updated;
+  }, []);
+
+  const saveSettingsAPI = useCallback(async (settings) => {
+    const saved = await api.saveSettings(settings);
+    setBIZ(saved);
+    return saved;
+  }, []);
+
+  const refreshProducts = useCallback(async () => {
+    const data = await api.fetchProducts();
+    setProducts(data);
+    return data;
+  }, []);
 
   const t = T[lang];
   const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
@@ -230,7 +313,7 @@ export function AppProvider({ children }) {
     mobileMenu, setMobileMenu, showCart, setShowCart,
     showAuth, setShowAuth, showProductModal, setShowProductModal,
     cart, dc, wishIds, setWishIds, toasts, setToasts,
-    products, searchQ, setSearchQ, selModel, setSelModel,
+    products, setProducts, searchQ, setSearchQ, selModel, setSelModel,
     selCat, setSelCat, sortBy, setSortBy,
     user, setUser, adminView, setAdminView, adminTab, setAdminTab,
     orders, setOrders, checkoutStep, setCheckoutStep,
@@ -247,6 +330,10 @@ export function AppProvider({ children }) {
     t, cartTotal, cartCount, deliveryFee, grandTotal, unreadCount,
     fmt, addToast, navTo, filtered,
     bg, tx, txS, cd, bd, inp, hdr, aL,
+    // API action helpers
+    loginUser, registerUser, logoutUser,
+    placeOrderAPI, fetchOrdersAPI, updateOrderStatusAPI,
+    saveSettingsAPI, refreshProducts,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

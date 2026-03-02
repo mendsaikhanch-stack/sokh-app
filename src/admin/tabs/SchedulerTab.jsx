@@ -29,9 +29,10 @@ export default function SchedulerTab() {
           </thead>
           <tbody>
             {scheduledPosts.map((sp) => {
-              const prod = products.find((p) => p.id === sp.product);
+              const spProd = sp.product;
+              const prod = products.find((p) => (p._id || p.id) === (spProd?._id || spProd));
               return (
-                <tr key={sp.id} className={`border-t ${bd}`}>
+                <tr key={sp._id || sp.id} className={`border-t ${bd}`}>
                   <td className="px-4 py-3 font-mono text-xs">{sp.date}</td>
                   <td className="px-4 py-3 font-mono font-bold">{sp.time}</td>
                   <td className="px-4 py-3">

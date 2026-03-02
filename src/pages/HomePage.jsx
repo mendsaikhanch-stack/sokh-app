@@ -112,7 +112,7 @@ export default function HomePage() {
           >
             {products.slice(0, 6).map((p) => (
               <div
-                key={p.id}
+                key={p._id || p.id}
                 onClick={() => {
                   setShowProductModal(p);
                   setModalQty(1);

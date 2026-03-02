@@ -40,7 +40,7 @@ export default function OverviewTab() {
           <div className="space-y-2">
             {stockAlerts.map((p) => (
               <div
-                key={p.id}
+                key={p._id || p.id}
                 className="flex items-center justify-between text-sm"
               >
                 <span>

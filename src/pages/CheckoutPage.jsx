@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   ChevronRight, Check, Package, Truck, Zap, MapPin, Send,
   QrCode, CreditCard, Banknote, Calendar,
@@ -14,8 +15,9 @@ export default function CheckoutPage() {
     deliveryMethod, setDeliveryMethod,
     deliveryForm, setDeliveryForm,
     checkoutForm, setCheckoutForm,
-    setShowCheckout, navTo,
+    setShowCheckout, navTo, placeOrderAPI, addToast,
   } = useApp();
+  const [placing, setPlacing] = useState(false);
 
   return (
     <div className="max-w-2xl mx-auto p-4 py-8">
@@ -404,14 +406,46 @@ export default function CheckoutPage() {
                 ← {t.prev}
               </button>
               <button
-                onClick={() => {
-                  setCheckoutStep(3);
-                  trackPurchase(grandTotal);
-                  dc({ type: "CLEAR" });
+                disabled={placing}
+                onClick={async () => {
+                  setPlacing(true);
+                  try {
+                    await placeOrderAPI({
+                      customer: checkoutForm.name || "Guest",
+                      phone: checkoutForm.phone || "",
+                      items: cart.map((item) => ({
+                        product: item._id || null,
+                        name: item.name,
+                        emoji: item.emoji,
+                        price: item.price,
+                        qty: item.qty,
+                      })),
+                      total: grandTotal,
+                      pay: payMethod,
+                      delivery: {
+                        method: deliveryMethod,
+                        fee: deliveryFee,
+                        address: checkoutForm.address,
+                        district: deliveryForm.district,
+                        khoroo: deliveryForm.khoroo,
+                        building: deliveryForm.building,
+                        apartment: deliveryForm.apartment,
+                        note: deliveryForm.note,
+                        phone2: deliveryForm.phone2,
+                      },
+                    });
+                    setCheckoutStep(3);
+                    trackPurchase(grandTotal);
+                    dc({ type: "CLEAR" });
+                  } catch (err) {
+                    addToast(err.message || "Order failed");
+                  } finally {
+                    setPlacing(false);
+                  }
                 }}
-                className="flex-1 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold"
+                className="flex-1 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold disabled:opacity-50"
               >
-                {t.placeOrder}
+                {placing ? "..." : t.placeOrder}
               </button>
             </div>
           </div>

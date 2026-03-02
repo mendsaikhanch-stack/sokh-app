@@ -87,7 +87,7 @@ export default function PartsPage({ isHome = false }) {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-5">
           {(isHome ? filtered.slice(0, 8) : filtered).map((p) => (
             <div
-              key={p.id}
+              key={(p._id || p.id)}
               className={`${cd} rounded-xl border ${bd} overflow-hidden group hover:shadow-lg transition-all`}
             >
               <div
@@ -135,9 +135,9 @@ export default function PartsPage({ isHome = false }) {
                     onClick={(e) => {
                       e.stopPropagation();
                       setWishIds((prev) =>
-                        prev.includes(p.id)
-                          ? prev.filter((x) => x !== p.id)
-                          : [...prev, p.id]
+                        prev.includes((p._id || p.id))
+                          ? prev.filter((x) => x !== (p._id || p.id))
+                          : [...prev, (p._id || p.id)]
                       );
                     }}
                     className="p-1.5 rounded-full bg-white/80 hover:bg-white shadow"
@@ -145,7 +145,7 @@ export default function PartsPage({ isHome = false }) {
                     <Heart
                       size={14}
                       className={
-                        wishIds.includes(p.id)
+                        wishIds.includes((p._id || p.id))
                           ? "text-red-500 fill-red-500"
                           : "text-gray-400"
                       }

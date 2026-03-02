@@ -3,3 +3,6 @@ dist
 .env
 .env.local
 screenshots
+server/node_modules
+server/.env
+server/uploads

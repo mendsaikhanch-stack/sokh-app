@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Settings, MapPin, CreditCard, Globe, Bell, Plus, Trash2, Check,
 } from "lucide-react";
@@ -5,8 +6,9 @@ import { FBIcon, IGIcon, TKIcon, YTIcon } from "../../components/icons/SocialIco
 import useApp from "../../hooks/useApp";
 
 export default function SettingsTab() {
-  const { dark, cd, bd, txS, aL, inp, lang, t, BIZ, setBIZ, addToast } =
+  const { dark, cd, bd, txS, aL, inp, lang, t, BIZ, setBIZ, addToast, saveSettingsAPI } =
     useApp();
+  const [saving, setSaving] = useState(false);
 
   return (
     <div className="space-y-4 max-w-2xl">
@@ -509,15 +511,22 @@ export default function SettingsTab() {
 
       {/* Save */}
       <button
-        onClick={() =>
-          addToast(
-            lang === "mn" ? "Тохиргоо хадгалагдлаа!" : "Settings saved!"
-          )
-        }
-        className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold flex items-center justify-center gap-2"
+        disabled={saving}
+        onClick={async () => {
+          setSaving(true);
+          try {
+            await saveSettingsAPI(BIZ);
+            addToast(lang === "mn" ? "Тохиргоо хадгалагдлаа!" : "Settings saved!");
+          } catch (err) {
+            addToast(err.message || "Save failed");
+          } finally {
+            setSaving(false);
+          }
+        }}
+        className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
       >
         <Check size={18} />
-        {t.save}
+        {saving ? "..." : t.save}
       </button>
     </div>
   );
