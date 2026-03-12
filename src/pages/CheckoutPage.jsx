@@ -262,39 +262,73 @@ export default function CheckoutPage() {
           <div className="space-y-4">
             <h3 className="font-bold text-lg mb-4">{t.paymentMethod}</h3>
             {[
-              ["qpay", QrCode, t.qpay, t.qpayDesc, "text-blue-500"],
-              [
-                "bank",
-                CreditCard,
-                t.bankTransfer,
-                `${t.bankName} | ${t.accountNo}`,
-                "text-green-600",
-              ],
-              ["cash", Banknote, t.cash, t.cashDesc, "text-amber-600"],
-              [
-                "installment",
-                Calendar,
-                t.installment,
-                t.installmentDesc,
-                "text-purple-600",
-              ],
-            ].map(([k, I, label, desc, clr]) => (
+              {
+                k: "qpay",
+                label: "QPay",
+                desc: t.qpayDesc,
+                logo: "https://play-lh.googleusercontent.com/GIKh_dONMrXdjNv4W3SRn5dxWYFBKzFMpSscnXsSC9PBJYo6K9on0kmBIXpGfEn0Lg=w240-h480-rw",
+                bg: "bg-blue-50 dark:bg-blue-900/20",
+                ring: "border-blue-400",
+              },
+              {
+                k: "socialpay",
+                label: "SocialPay",
+                desc: lang === "mn" ? "Голомт банкны SocialPay" : "Golomt Bank SocialPay",
+                logo: "https://play-lh.googleusercontent.com/xAHJjJDKFAD5X0bLJdmrB3JCktA7APCN2MnwOPf-DEVcZ_MZLGZ7i7QhLIb7WBkSNw=w240-h480-rw",
+                bg: "bg-emerald-50 dark:bg-emerald-900/20",
+                ring: "border-emerald-400",
+              },
+              {
+                k: "bank",
+                label: t.bankTransfer,
+                desc: `${BIZ.bankName || t.bankName} | ${BIZ.accountNo || t.accountNo}`,
+                logo: "https://play-lh.googleusercontent.com/QLQJbIG1dvjkHBlCHQtAj1RGm8M7I6GOOFjuFOiA7F8OFByGNG3GERjR4F1MU_FJPck=w240-h480-rw",
+                bg: "bg-green-50 dark:bg-green-900/20",
+                ring: "border-green-400",
+              },
+              {
+                k: "cash",
+                label: t.cash,
+                desc: t.cashDesc,
+                icon: Banknote,
+                iconColor: "text-amber-500",
+                bg: "bg-amber-50 dark:bg-amber-900/20",
+                ring: "border-amber-400",
+              },
+              {
+                k: "installment",
+                label: t.installment,
+                desc: t.installmentDesc,
+                icon: Calendar,
+                iconColor: "text-purple-500",
+                bg: "bg-purple-50 dark:bg-purple-900/20",
+                ring: "border-purple-400",
+              },
+            ].map(({ k, label, desc, logo, icon: Icon, iconColor, bg, ring }) => (
               <button
                 key={k}
                 onClick={() => setPayMethod(k)}
-                className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition ${
+                className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all duration-200 ${
                   payMethod === k
-                    ? `border-amber-500 ${aL}`
-                    : `${bd}`
+                    ? `${ring} ${bg} shadow-md scale-[1.02]`
+                    : `${bd} hover:${bg} hover:scale-[1.01]`
                 }`}
               >
-                <I size={28} className={clr} />
-                <div>
-                  <p className="font-medium">{label}</p>
+                {logo ? (
+                  <img src={logo} alt={label} className="w-10 h-10 rounded-lg object-contain" />
+                ) : (
+                  <div className={`w-10 h-10 rounded-lg ${bg} flex items-center justify-center`}>
+                    <Icon size={24} className={iconColor} />
+                  </div>
+                )}
+                <div className="flex-1">
+                  <p className="font-semibold">{label}</p>
                   <p className={`text-xs ${txS}`}>{desc}</p>
                 </div>
                 {payMethod === k && (
-                  <Check size={20} className="ml-auto text-amber-500" />
+                  <div className="w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center">
+                    <Check size={14} className="text-white" />
+                  </div>
                 )}
               </button>
             ))}
