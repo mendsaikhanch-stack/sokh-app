@@ -1,4 +1,4 @@
-import { Phone, Zap, Award, Truck, Shield, Wrench } from "lucide-react";
+import { Phone, Zap, Award, Truck, Shield, Wrench, MapPin } from "lucide-react";
 import useApp from "../hooks/useApp";
 import ShieldLogo from "../components/ui/ShieldLogo";
 import { BANNER_IMG } from "../assets/banner";
@@ -223,6 +223,19 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* FLOATING LOCATION SHARE BUTTON */}
+      <a
+        href={`sms:${BIZ.phone}?body=${encodeURIComponent(
+          `📍 444 Prius Сэлбэг Засвар\n📌 ${BIZ.address}\n🗺️ ${BIZ.mapUrl}`
+        )}`}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-full bg-amber-500 hover:bg-amber-600 text-white font-semibold shadow-lg shadow-amber-500/30 transition-all hover:scale-105"
+      >
+        <MapPin size={20} />
+        <span className="text-sm hidden sm:inline">
+          {lang === "mn" ? "Байршил илгээх" : "Send Location"}
+        </span>
+      </a>
     </>
   );
 }
