@@ -25,43 +25,44 @@ export const login = (email, password) => request('/auth/login', { method: 'POST
 export const register = (name, email, password) => request('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) });
 export const getMe = () => request('/auth/me');
 
-// Products
-export const fetchProducts = () => request('/products');
-export const createProduct = (data) => request('/products', { method: 'POST', body: JSON.stringify(data) });
-export const updateProduct = (id, data) => request(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-export const deleteProduct = (id) => request(`/products/${id}`, { method: 'DELETE' });
-export const updateStock = (id, stock) => request(`/products/${id}/stock`, { method: 'PATCH', body: JSON.stringify({ stock }) });
+// Building (settings)
+export const fetchBuilding = () => request('/buildings');
+export const saveBuilding = (data) => request('/buildings', { method: 'PUT', body: JSON.stringify(data) });
 
-// Orders
-export const placeOrder = (data) => request('/orders', { method: 'POST', body: JSON.stringify(data) });
-export const fetchOrders = () => request('/orders');
-export const updateOrderStatus = (id, status) => request(`/orders/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) });
+// Units
+export const fetchUnits = (params = '') => request(`/units${params ? '?' + params : ''}`);
+export const createUnit = (data) => request('/units', { method: 'POST', body: JSON.stringify(data) });
+export const updateUnit = (id, data) => request(`/units/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteUnit = (id) => request(`/units/${id}`, { method: 'DELETE' });
 
-// Settings
-export const fetchSettings = () => request('/settings');
-export const saveSettings = (data) => request('/settings', { method: 'PUT', body: JSON.stringify(data) });
+// Residents
+export const fetchResidents = (params = '') => request(`/residents${params ? '?' + params : ''}`);
+export const createResident = (data) => request('/residents', { method: 'POST', body: JSON.stringify(data) });
+export const bulkImportResidents = (residents) => request('/residents/bulk', { method: 'POST', body: JSON.stringify({ residents }) });
+export const updateResident = (id, data) => request(`/residents/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteResident = (id) => request(`/residents/${id}`, { method: 'DELETE' });
 
-// Upload
-export async function uploadImage(file) {
-  const token = getToken();
-  const form = new FormData();
-  form.append('image', file);
-  const res = await fetch(`${BASE}/upload`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form,
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.message || 'Upload failed');
-  return data;
-}
+// Payments
+export const fetchPayments = (params = '') => request(`/payments${params ? '?' + params : ''}`);
+export const createPayment = (data) => request('/payments', { method: 'POST', body: JSON.stringify(data) });
+export const generatePayments = (data) => request('/payments/generate', { method: 'POST', body: JSON.stringify(data) });
+export const updatePayment = (id, data) => request(`/payments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deletePayment = (id) => request(`/payments/${id}`, { method: 'DELETE' });
 
-// Scheduled Posts
-export const fetchScheduledPosts = () => request('/scheduled-posts');
-export const createScheduledPost = (data) => request('/scheduled-posts', { method: 'POST', body: JSON.stringify(data) });
-export const updateScheduledPost = (id, data) => request(`/scheduled-posts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-export const deleteScheduledPost = (id) => request(`/scheduled-posts/${id}`, { method: 'DELETE' });
+// Requests (maintenance)
+export const fetchRequests = (params = '') => request(`/requests${params ? '?' + params : ''}`);
+export const createRequest = (data) => request('/requests', { method: 'POST', body: JSON.stringify(data) });
+export const updateRequest = (id, data) => request(`/requests/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteRequest = (id) => request(`/requests/${id}`, { method: 'DELETE' });
 
-// Services
-export const fetchServices = () => request('/services');
-export const updateService = (id, data) => request(`/services/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+// Announcements
+export const fetchAnnouncements = () => request('/announcements');
+export const createAnnouncement = (data) => request('/announcements', { method: 'POST', body: JSON.stringify(data) });
+export const updateAnnouncement = (id, data) => request(`/announcements/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteAnnouncement = (id) => request(`/announcements/${id}`, { method: 'DELETE' });
+
+// Expenses
+export const fetchExpenses = (params = '') => request(`/expenses${params ? '?' + params : ''}`);
+export const createExpense = (data) => request('/expenses', { method: 'POST', body: JSON.stringify(data) });
+export const updateExpense = (id, data) => request(`/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteExpense = (id) => request(`/expenses/${id}`, { method: 'DELETE' });

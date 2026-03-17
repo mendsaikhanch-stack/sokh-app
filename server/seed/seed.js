@@ -1,130 +1,129 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
-
 import User from '../models/User.js';
-import Product from '../models/Product.js';
-import Order from '../models/Order.js';
-import BusinessSettings from '../models/BusinessSettings.js';
-import ScheduledPost from '../models/ScheduledPost.js';
-import Service from '../models/Service.js';
+import Building from '../models/Building.js';
+import Unit from '../models/Unit.js';
+import Resident from '../models/Resident.js';
+import Payment from '../models/Payment.js';
+import Request from '../models/Request.js';
+import Announcement from '../models/Announcement.js';
+import Expense from '../models/Expense.js';
 
-const products = [
-  {name:{mn:"Hybrid батерей",en:"Hybrid Battery"},price:850000,model:"Prius 20",cat:"Батерей",rating:4.9,stock:2,cond:"used",img:"https://images.unsplash.com/photo-1620714223084-8fcacc6dfd8d?w=400&h=400&fit=crop",emoji:"🔋",desc:{mn:"Япон задаргааны hybrid батерей",en:"Japanese hybrid battery"}},
-  {name:{mn:"Hybrid батерей",en:"Hybrid Battery"},price:950000,model:"Prius 30",cat:"Батерей",rating:4.8,stock:3,cond:"used",img:"https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=400&h=400&fit=crop",emoji:"🔋",desc:{mn:"Prius 30 hybrid батерей",en:"Prius 30 hybrid battery"}},
-  {name:{mn:"Инвертор",en:"Inverter"},price:450000,model:"Prius 20",cat:"Цахилгаан",rating:4.7,stock:4,cond:"used",img:"https://images.unsplash.com/photo-1558618666-fcd25c85f82e?w=400&h=400&fit=crop",emoji:"⚡",desc:{mn:"Инвертор, баталгаа 6 сар",en:"Inverter, 6mo warranty"}},
-  {name:{mn:"Урд гупер",en:"Front Bumper"},price:120000,model:"Prius 20",cat:"Гадна детал",rating:4.5,stock:8,cond:"used",img:"https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?w=400&h=400&fit=crop",emoji:"🚗",desc:{mn:"Урд гупер, өнгө сонголттой",en:"Front bumper, color options"}},
-  {name:{mn:"Хойд гупер",en:"Rear Bumper"},price:110000,model:"Prius 30",cat:"Гадна детал",rating:4.4,stock:1,cond:"used",img:"https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=400&h=400&fit=crop",emoji:"🚗",desc:{mn:"Хойд гупер",en:"Rear bumper"}},
-  {name:{mn:"Рулын аппарат",en:"Steering Rack"},price:280000,model:"Prius 10/11",cat:"Явах эд анги",rating:4.6,stock:3,cond:"used",img:"https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?w=400&h=400&fit=crop",emoji:"🔧",desc:{mn:"Рулын аппарат засварласан",en:"Repaired steering rack"}},
-  {name:{mn:"Амортизатор урд",en:"Front Shocks"},price:65000,model:"Prius 20",cat:"Явах эд анги",rating:4.3,stock:12,cond:"new",img:"https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=400&h=400&fit=crop",emoji:"🔩",desc:{mn:"Шинэ амортизатор, хос",en:"New shock absorbers, pair"}},
-  {name:{mn:"Мотор 1NZ-FXE",en:"Engine 1NZ-FXE"},price:1200000,model:"Prius 20",cat:"Мотор",rating:4.9,stock:2,cond:"used",img:"https://images.unsplash.com/photo-1580894894513-541e068a3e2b?w=400&h=400&fit=crop",emoji:"⚙️",desc:{mn:"Япон мотор, 80,000км",en:"Japanese engine, 80K km"}},
-  {name:{mn:"Мотор 2ZR-FXE",en:"Engine 2ZR-FXE"},price:1500000,model:"Prius 30",cat:"Мотор",rating:4.8,stock:1,cond:"used",img:"https://images.unsplash.com/photo-1615811361523-6bd03d7748e7?w=400&h=400&fit=crop",emoji:"⚙️",desc:{mn:"Prius 30 мотор",en:"Prius 30 engine"}},
-  {name:{mn:"Агаар шүүгч",en:"Air Filter"},price:15000,model:"Prius 20",cat:"Тос/Шингэн",rating:4.2,stock:30,cond:"new",img:"https://images.unsplash.com/photo-1558618666-fcd25c85f82e?w=400&h=400&fit=crop",emoji:"💨",desc:{mn:"Шинэ агаар шүүгч",en:"New air filter"}},
-  {name:{mn:"Тоормосны наклад",en:"Brake Pads"},price:45000,model:"Prius 30",cat:"Явах эд анги",rating:4.5,stock:20,cond:"new",img:"https://images.unsplash.com/photo-1600712242805-5f78671b24da?w=400&h=400&fit=crop",emoji:"🛞",desc:{mn:"Шинэ тоормосны наклад",en:"New brake pads"}},
-  {name:{mn:"Толь хажуу",en:"Side Mirror"},price:55000,model:"Prius 20",cat:"Гадна детал",rating:4.3,stock:10,cond:"used",img:"https://images.unsplash.com/photo-1489824904134-891ab64532f1?w=400&h=400&fit=crop",emoji:"🪞",desc:{mn:"Хажуу толь, цахилгаан",en:"Electric side mirror"}},
-  {name:{mn:"Hybrid батерей",en:"Hybrid Battery"},price:750000,model:"Aqua",cat:"Батерей",rating:4.7,stock:2,cond:"used",img:"https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=400&h=400&fit=crop",emoji:"🔋",desc:{mn:"Aqua hybrid батерей",en:"Aqua hybrid battery"}},
-  {name:{mn:"Урд фара LED",en:"LED Headlight"},price:85000,model:"Prius 30",cat:"Цахилгаан",rating:4.4,stock:6,cond:"used",img:"https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=400&h=400&fit=crop",emoji:"💡",desc:{mn:"Урд фара LED",en:"LED headlight"}},
-  {name:{mn:"Мотор масло 5W-30",en:"Engine Oil 5W-30"},price:35000,model:"Prius 20",cat:"Тос/Шингэн",rating:4.6,stock:50,cond:"new",img:"https://images.unsplash.com/photo-1600712242805-5f78671b24da?w=400&h=400&fit=crop",emoji:"🛢️",desc:{mn:"Toyota genuine 4л",en:"Toyota genuine 4L"}},
-  {name:{mn:"Хаалга урд",en:"Front Door"},price:180000,model:"Prius 40/41",cat:"Гадна детал",rating:4.5,stock:2,cond:"used",img:"https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?w=400&h=400&fit=crop",emoji:"🚪",desc:{mn:"Prius 40 хаалга",en:"Prius 40 door"}},
-];
+dotenv.config({ path: '../.env' });
 
-const bizSettings = {
-  name:"444 Prius Сэлбэг Засвар",
-  phone:"8911-2722",
-  phone2:"9444-4444",
-  address:"УБ хот, Энх тайваны өргөн чөлөө",
-  branches:[{name:"Төв салбар",phone:"8911-2722",address:"УБ хот, Энх тайваны өргөн чөлөө"}],
-  facebook:"https://www.facebook.com/444.prius.selbeg",
-  instagram:"https://www.instagram.com/444.prius.selbeg",
-  tiktok:"https://www.tiktok.com/@444prius",
-  youtube:"https://www.youtube.com/@444prius",
-  fbPixelId:"",
-  fbPageId:"",
-  workHours:"Даваа-Бямба: 09:00-19:00",
-  bankName:"Хаан банк",
-  accountNo:"5012345678",
-  accountHolder:"444 Prius ХХК",
-  mapEmbed:"https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2674.5!2d106.9177!3d47.9184!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x5d96925be2b18cfb%3A0x9cfcd30e2f9c346e!2z0K3QvdGFINGC0LDQudCy0LDQvdGLINOp0YDQs9Op0L0g0YfTqdC70LnTqdOp!5e0!3m2!1smn!2smn!4v1709000000000!5m2!1smn!2smn",
-  mapUrl:"https://www.google.com/maps/search/444+Prius+%D0%A1%D1%8D%D0%BB%D0%B1%D1%8D%D0%B3+%D0%97%D0%B0%D1%81%D0%B2%D0%B0%D1%80+%D0%AD%D0%BD%D1%85+%D1%82%D0%B0%D0%B9%D0%B2%D0%B0%D0%BD%D1%8B+%D3%A9%D1%80%D0%B3%D3%A9%D0%BD+%D1%87%D3%A9%D0%BB%D3%A9%D3%A9",
-};
-
-const services = [
-  {key:"computerDiag",icon:"Cpu",price:"30,000₮~"},
-  {key:"batteryService",icon:"Battery",price:"50,000₮~"},
-  {key:"engineRepair",icon:"Wrench",price:"Үнэ тохирно"},
-  {key:"suspensionRepair",icon:"Car",price:"40,000₮~"},
-  {key:"acService",icon:"Filter",price:"25,000₮~"},
-  {key:"oilChange",icon:"Package",price:"15,000₮~"},
-  {key:"callout",icon:"Truck",price:"20,000₮~"},
-  {key:"bodyRepair",icon:"Shield",price:"Үнэ тохирно"},
-];
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/sokh-app';
 
 async function seed() {
-  try {
-    await mongoose.connect(process.env.MONGODB_URI);
-    console.log('Connected to MongoDB');
+  await mongoose.connect(MONGODB_URI);
+  console.log('Connected to MongoDB');
 
-    // Clear existing data
-    await Promise.all([
-      User.deleteMany(),
-      Product.deleteMany(),
-      Order.deleteMany(),
-      BusinessSettings.deleteMany(),
-      ScheduledPost.deleteMany(),
-      Service.deleteMany(),
-    ]);
-    console.log('Cleared existing data');
+  // Clear all
+  await Promise.all([
+    User.deleteMany(),
+    Building.deleteMany(),
+    Unit.deleteMany(),
+    Resident.deleteMany(),
+    Payment.deleteMany(),
+    Request.deleteMany(),
+    Announcement.deleteMany(),
+    Expense.deleteMany(),
+  ]);
+  console.log('Cleared existing data');
 
-    // Create admin user
-    const admin = await User.create({
-      name: 'Admin',
-      email: 'admin@shop.mn',
-      password: 'admin123',
-      isAdmin: true,
-    });
-    console.log('Admin user created:', admin.email);
+  // Admin user
+  const admin = await User.create({
+    name: 'Админ',
+    email: 'admin@sokh.mn',
+    password: 'admin123',
+    isAdmin: true,
+  });
+  console.log('Admin user created');
 
-    // Create products
-    const createdProducts = await Product.insertMany(products);
-    console.log(`${createdProducts.length} products created`);
+  // Building
+  const building = await Building.create({
+    name: 'Алтан Орд СӨХ',
+    address: 'БЗД, 3-р хороо, 15-р байр',
+    phone: '77001234',
+    email: 'info@altanord.mn',
+    color: '#2563EB',
+    blocks: 'A, B',
+    totalUnits: 120,
+    floors: 16,
+    monthlyFee: 80000,
+    bankName: 'Хаан банк',
+    accountNo: '5000123456',
+    accountHolder: 'Алтан Орд СӨХ',
+  });
+  console.log('Building created');
 
-    // Create mock orders referencing the created products
-    const mockOrders = [
-      {orderId:"ORD-001",customer:"Батбаяр",phone:"9911-2233",items:[{product:createdProducts[0]._id,name:createdProducts[0].name,emoji:createdProducts[0].emoji,price:createdProducts[0].price,qty:1},{product:createdProducts[2]._id,name:createdProducts[2].name,emoji:createdProducts[2].emoji,price:createdProducts[2].price,qty:1}],total:900000,status:"new",date:"2026-02-25",pay:"qpay"},
-      {orderId:"ORD-002",customer:"Ганбаатар",phone:"8800-1122",items:[{product:createdProducts[7]._id,name:createdProducts[7].name,emoji:createdProducts[7].emoji,price:createdProducts[7].price,qty:1}],total:1200000,status:"processing",date:"2026-02-24",pay:"bank"},
-      {orderId:"ORD-003",customer:"Сарангэрэл",phone:"9900-3344",items:[{product:createdProducts[9]._id,name:createdProducts[9].name,emoji:createdProducts[9].emoji,price:createdProducts[9].price,qty:3}],total:245000,status:"delivered",date:"2026-02-23",pay:"cash"},
-    ];
-    await Order.insertMany(mockOrders);
-    console.log(`${mockOrders.length} orders created`);
+  // Units
+  const units = await Unit.insertMany([
+    { number: 45, block: 'A', floor: 4, size: 65, type: 'Owner', residents: 3, parking: '#12', paid: true, building: building._id },
+    { number: 46, block: 'A', floor: 4, size: 70, type: 'Owner', residents: 2, parking: '#13', paid: false, building: building._id },
+    { number: 47, block: 'A', floor: 5, size: 60, type: 'Tenant', residents: 4, parking: '-', paid: true, building: building._id },
+    { number: 32, block: 'B', floor: 3, size: 55, type: 'Owner', residents: 2, parking: '#08', paid: false, building: building._id },
+    { number: 33, block: 'B', floor: 3, size: 80, type: 'Tenant', residents: 1, parking: '#09', paid: true, building: building._id },
+    { number: 51, block: 'A', floor: 5, size: 72, type: 'Owner', residents: 3, parking: '#15', paid: false, building: building._id },
+  ]);
+  console.log(`${units.length} units created`);
 
-    // Create business settings
-    await BusinessSettings.create(bizSettings);
-    console.log('Business settings created');
+  // Residents
+  const residents = await Resident.insertMany([
+    { name: 'Бат-Эрдэнэ', phone: '99112233', unit: 45, block: 'A', type: 'Owner', regNo: 'УБ99112233', members: 3, moveIn: '2020.06', car: 'УБА 1234', parking: '#12', building: building._id },
+    { name: 'Сарангэрэл', phone: '88445566', unit: 46, block: 'A', type: 'Owner', regNo: 'УБ88445566', members: 2, moveIn: '2021.01', car: 'УБЕ 5678', parking: '#13', building: building._id },
+    { name: 'Тэмүүлэн', phone: '95667788', unit: 47, block: 'A', type: 'Tenant', regNo: 'ДО95667788', members: 4, moveIn: '2024.03', car: '-', parking: '-', building: building._id },
+    { name: 'Мөнхбаяр', phone: '99887766', unit: 32, block: 'B', type: 'Owner', regNo: 'УБ99887766', members: 2, moveIn: '2019.11', car: 'УБГ 9012', parking: '#08', building: building._id },
+    { name: 'Оюунчимэг', phone: '88991122', unit: 33, block: 'B', type: 'Tenant', regNo: 'ХО88991122', members: 1, moveIn: '2025.08', car: '-', parking: '#09', building: building._id },
+    { name: 'Ганбаатар', phone: '95443322', unit: 51, block: 'A', type: 'Owner', regNo: 'УБ95443322', members: 3, moveIn: '2022.05', car: 'УБД 3456', parking: '#15', building: building._id },
+  ]);
+  console.log(`${residents.length} residents created`);
 
-    // Create scheduled posts
-    const scheduledPosts = [
-      {product:createdProducts[0]._id,time:"09:00",status:"posted",platforms:["facebook","instagram"],date:"2026-02-27"},
-      {product:createdProducts[7]._id,time:"13:00",status:"scheduled",platforms:["facebook","tiktok"],date:"2026-02-27"},
-      {product:createdProducts[1]._id,time:"18:00",status:"pending",platforms:["facebook","instagram","tiktok","youtube"],date:"2026-02-27"},
-      {product:createdProducts[12]._id,time:"09:00",status:"pending",platforms:["facebook","instagram"],date:"2026-02-28"},
-    ];
-    await ScheduledPost.insertMany(scheduledPosts);
-    console.log(`${scheduledPosts.length} scheduled posts created`);
+  // Payments
+  const payments = await Payment.insertMany([
+    { unit: 45, block: 'A', month: '2026.03', label: 'СӨХ төлбөр', amount: 80000, paid: false, building: building._id },
+    { unit: 45, block: 'A', month: '2026.02', label: 'СӨХ төлбөр', amount: 80000, paid: true, paidDate: '2026.02.10', building: building._id },
+    { unit: 45, block: 'A', month: '2026.01', label: 'СӨХ төлбөр', amount: 80000, paid: true, paidDate: '2026.01.15', building: building._id },
+    { unit: 46, block: 'A', month: '2026.03', label: 'СӨХ төлбөр', amount: 80000, paid: false, building: building._id },
+    { unit: 46, block: 'A', month: '2026.02', label: 'СӨХ төлбөр', amount: 80000, paid: false, building: building._id },
+    { unit: 47, block: 'A', month: '2026.03', label: 'СӨХ төлбөр', amount: 80000, paid: true, paidDate: '2026.03.01', building: building._id },
+    { unit: 32, block: 'B', month: '2026.03', label: 'СӨХ төлбөр', amount: 80000, paid: false, building: building._id },
+    { unit: 33, block: 'B', month: '2026.03', label: 'СӨХ төлбөр', amount: 80000, paid: true, paidDate: '2026.03.05', building: building._id },
+    { unit: 51, block: 'A', month: '2026.03', label: 'СӨХ төлбөр', amount: 80000, paid: false, building: building._id },
+  ]);
+  console.log(`${payments.length} payments created`);
 
-    // Create services
-    await Service.insertMany(services);
-    console.log(`${services.length} services created`);
+  // Requests
+  const requests = await Request.insertMany([
+    { unit: 45, block: 'A', cat: 'Лифт', title: 'Лифт эвдэрсэн', desc: '3-р давхрын лифт ажиллахгүй байна', status: 'progress', date: '2026.03.10', building: building._id },
+    { unit: 45, block: 'A', cat: 'Цэвэрлэгээ', title: 'Цэвэрлэгээ муу', desc: 'Шатны цэвэрлэгээ хийгдээгүй', status: 'done', date: '2026.03.05', building: building._id },
+    { unit: 32, block: 'B', cat: 'Ус', title: 'Ус алдаж байна', desc: 'Угаалгын өрөөнөөс ус гоожиж байна', status: 'open', date: '2026.03.13', building: building._id },
+    { unit: 46, block: 'A', cat: 'Бусад', title: 'Хаалга эвдэрсэн', desc: 'Оролтын хаалганы түгжээ ажиллахгүй', status: 'open', date: '2026.03.11', building: building._id },
+  ]);
+  console.log(`${requests.length} requests created`);
 
-    console.log('\nSeed completed successfully!');
-    process.exit(0);
-  } catch (err) {
-    console.error('Seed error:', err);
-    process.exit(1);
-  }
+  // Announcements
+  const announcements = await Announcement.insertMany([
+    { icon: '💧', text: 'Маргааш 10:00-18:00 ус тасарна', date: '2026.03.14', urgent: true, building: building._id },
+    { icon: '🏢', text: 'СӨХ хурал 03/20-нд болно', date: '2026.03.12', urgent: false, building: building._id },
+    { icon: '⚡', text: 'Цахилгааны тариф шинэчлэгдлээ', date: '2026.03.10', urgent: false, building: building._id },
+  ]);
+  console.log(`${announcements.length} announcements created`);
+
+  // Expenses
+  const expenses = await Expense.insertMany([
+    { label: 'Цэвэрлэгээ', amount: 500000, icon: '🧹', month: '2026.03', building: building._id },
+    { label: 'Харуул хамгаалалт', amount: 800000, icon: '🛡️', month: '2026.03', building: building._id },
+    { label: 'Засвар үйлчилгээ', amount: 300000, icon: '🔧', month: '2026.03', building: building._id },
+    { label: 'Цахилгаан', amount: 450000, icon: '⚡', month: '2026.03', building: building._id },
+    { label: 'Лифт засвар', amount: 200000, icon: '🛗', month: '2026.03', building: building._id },
+  ]);
+  console.log(`${expenses.length} expenses created`);
+
+  console.log('Seed complete!');
+  process.exit(0);
 }
 
-seed();
+seed().catch(err => {
+  console.error(err);
+  process.exit(1);
+});

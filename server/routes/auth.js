@@ -19,11 +19,11 @@ router.post('/register', async (req, res) => {
     const exists = await User.findOne({ email });
     if (exists) return res.status(400).json({ message: 'Email already registered' });
 
-    const user = await User.create({ name, email, password });
+    const user = await User.create({ name, email, password, phone: req.body.phone, unit: req.body.unit, block: req.body.block });
     const token = signToken(user._id);
     res.status(201).json({
       token,
-      user: { _id: user._id, name: user.name, email: user.email, isAdmin: user.isAdmin },
+      user: { _id: user._id, name: user.name, email: user.email, phone: user.phone, unit: user.unit, block: user.block, isAdmin: user.isAdmin },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -41,7 +41,7 @@ router.post('/login', async (req, res) => {
     const token = signToken(user._id);
     res.json({
       token,
-      user: { _id: user._id, name: user.name, email: user.email, isAdmin: user.isAdmin },
+      user: { _id: user._id, name: user.name, email: user.email, phone: user.phone, unit: user.unit, block: user.block, isAdmin: user.isAdmin },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -50,7 +50,7 @@ router.post('/login', async (req, res) => {
 
 // GET /api/auth/me
 router.get('/me', auth, (req, res) => {
-  res.json({ _id: req.user._id, name: req.user.name, email: req.user.email, isAdmin: req.user.isAdmin });
+  res.json({ _id: req.user._id, name: req.user.name, email: req.user.email, phone: req.user.phone, unit: req.user.unit, block: req.user.block, isAdmin: req.user.isAdmin });
 });
 
 export default router;

@@ -5,12 +5,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import connectDB from './config/db.js';
 import authRoutes from './routes/auth.js';
-import productRoutes from './routes/products.js';
-import orderRoutes from './routes/orders.js';
-import settingsRoutes from './routes/settings.js';
-import uploadRoutes from './routes/upload.js';
-import scheduledPostRoutes from './routes/scheduledPosts.js';
-import serviceRoutes from './routes/services.js';
+import buildingRoutes from './routes/buildings.js';
+import unitRoutes from './routes/units.js';
+import residentRoutes from './routes/residents.js';
+import paymentRoutes from './routes/payments.js';
+import requestRoutes from './routes/requests.js';
+import announcementRoutes from './routes/announcements.js';
+import expenseRoutes from './routes/expenses.js';
 
 dotenv.config();
 
@@ -27,12 +28,13 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/scheduled-posts', scheduledPostRoutes);
-app.use('/api/services', serviceRoutes);
+app.use('/api/buildings', buildingRoutes);
+app.use('/api/units', unitRoutes);
+app.use('/api/residents', residentRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/requests', requestRoutes);
+app.use('/api/announcements', announcementRoutes);
+app.use('/api/expenses', expenseRoutes);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
@@ -43,4 +45,4 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`СӨХ server running on port ${PORT}`));
