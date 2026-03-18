@@ -12,18 +12,18 @@ function signToken(id) {
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, phone, unit, block, building } = req.body;
     if (!name || !email || !password) {
-      return res.status(400).json({ message: 'All fields required' });
+      return res.status(400).json({ message: 'Нэр, имэйл, нууц үг заавал шаардлагатай' });
     }
     const exists = await User.findOne({ email });
-    if (exists) return res.status(400).json({ message: 'Email already registered' });
+    if (exists) return res.status(400).json({ message: 'Энэ имэйл бүртгэлтэй байна' });
 
-    const user = await User.create({ name, email, password, phone: req.body.phone, unit: req.body.unit, block: req.body.block });
+    const user = await User.create({ name, email, password, phone, unit, block, building });
     const token = signToken(user._id);
     res.status(201).json({
       token,
-      user: { _id: user._id, name: user.name, email: user.email, phone: user.phone, unit: user.unit, block: user.block, isAdmin: user.isAdmin },
+      user: { _id: user._id, name: user.name, email: user.email, phone: user.phone, unit: user.unit, block: user.block, isAdmin: user.isAdmin, building: user.building },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -36,12 +36,12 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
     if (!user || !(await user.matchPassword(password))) {
-      return res.status(401).json({ message: 'Invalid email or password' });
+      return res.status(401).json({ message: 'Имэйл эсвэл нууц үг буруу байна' });
     }
     const token = signToken(user._id);
     res.json({
       token,
-      user: { _id: user._id, name: user.name, email: user.email, phone: user.phone, unit: user.unit, block: user.block, isAdmin: user.isAdmin },
+      user: { _id: user._id, name: user.name, email: user.email, phone: user.phone, unit: user.unit, block: user.block, isAdmin: user.isAdmin, building: user.building },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -50,7 +50,7 @@ router.post('/login', async (req, res) => {
 
 // GET /api/auth/me
 router.get('/me', auth, (req, res) => {
-  res.json({ _id: req.user._id, name: req.user.name, email: req.user.email, phone: req.user.phone, unit: req.user.unit, block: req.user.block, isAdmin: req.user.isAdmin });
+  res.json({ _id: req.user._id, name: req.user.name, email: req.user.email, phone: req.user.phone, unit: req.user.unit, block: req.user.block, isAdmin: req.user.isAdmin, building: req.user.building });
 });
 
 export default router;

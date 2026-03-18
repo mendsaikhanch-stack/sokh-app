@@ -22,12 +22,14 @@ async function request(path, options = {}) {
 
 // Auth
 export const login = (email, password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-export const register = (name, email, password) => request('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) });
+export const register = (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) });
 export const getMe = () => request('/auth/me');
 
-// Building (settings)
-export const fetchBuilding = () => request('/buildings');
-export const saveBuilding = (data) => request('/buildings', { method: 'PUT', body: JSON.stringify(data) });
+// Buildings
+export const fetchBuildings = (params = '') => request(`/buildings${params ? '?' + params : ''}`);
+export const fetchBuildingById = (id) => request(`/buildings/${id}`);
+export const fetchLocations = (params = '') => request(`/buildings/locations${params ? '?' + params : ''}`);
+export const saveBuilding = (id, data) => request(`/buildings/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 
 // Units
 export const fetchUnits = (params = '') => request(`/units${params ? '?' + params : ''}`);

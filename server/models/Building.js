@@ -3,6 +3,9 @@ import mongoose from 'mongoose';
 const buildingSchema = new mongoose.Schema({
   name:      { type: String, required: true },
   address:   { type: String, default: '' },
+  city:      { type: String, default: 'Улаанбаатар' },
+  district:  { type: String, default: '' },
+  khoroo:    { type: String, default: '' },
   phone:     { type: String, default: '' },
   email:     { type: String, default: '' },
   logo:      { type: String, default: '' },
