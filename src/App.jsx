@@ -72,6 +72,7 @@ export default function App() {
     { id: 'announcements', label: 'Мэдэгдэл', icon: Bell },
     { id: 'requests', label: 'Хүсэлт', icon: Wrench },
     { id: 'expenses', label: 'Зарлага', icon: BarChart3 },
+    ...(user.isAdmin ? [{ id: 'moveout', label: 'Гарах', icon: ArrowRight }] : []),
     ...(user.isAdmin ? [{ id: 'parking', label: 'Зогсоол', icon: Car }] : []),
     ...(user.isAdmin ? [{ id: 'import', label: 'Импорт', icon: Upload }] : []),
     { id: 'profile', label: 'Профайл', icon: User },
@@ -137,6 +138,7 @@ export default function App() {
           {page === 'announcements' && <AnnouncementsPage user={user} building={building} />}
           {page === 'requests' && <RequestsPage user={user} building={building} />}
           {page === 'expenses' && <ExpensesPage building={building} />}
+          {page === 'moveout' && user.isAdmin && <MoveOutPage user={user} building={building} />}
           {page === 'parking' && user.isAdmin && <ParkingPage user={user} building={building} />}
           {page === 'import' && user.isAdmin && <ImportPage user={user} building={building} />}
           {page === 'profile' && <ProfilePage user={user} building={building} onLogout={handleLogout} />}
@@ -1075,6 +1077,639 @@ function ProfilePage({ user, building, onLogout }) {
         <LogOut size={18} />
         Системээс гарах
       </button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOVE-OUT PAGE (Admin only - Байрнаас гарах удирдлага)
+   ═══════════════════════════════════════════════════════════════════════════ */
+const MO_STATUSES = {
+  pending: 'Хүлээгдэж буй', checklist: 'Шалгалт', invoiced: 'Нэхэмжилсэн',
+  settling: 'Тооцоо хийж буй', completed: 'Дууссан', cancelled: 'Цуцалсан',
+};
+const MO_STATUS_COLORS = {
+  pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  checklist: 'bg-blue-100 text-blue-700 border-blue-200',
+  invoiced: 'bg-purple-100 text-purple-700 border-purple-200',
+  settling: 'bg-orange-100 text-orange-700 border-orange-200',
+  completed: 'bg-green-100 text-green-700 border-green-200',
+  cancelled: 'bg-gray-100 text-gray-500 border-gray-200',
+};
+const MO_STATUS_FLOW = ['pending', 'checklist', 'invoiced', 'settling', 'completed'];
+
+function MoveOutPage({ user, building }) {
+  const [list, setList] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [residents, setResidents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchText, setSearchText] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [showModal, setShowModal] = useState(null); // null | { mode, item? }
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const load = useCallback(() => {
+    setLoading(true);
+    const params = [];
+    if (filterStatus) params.push(`status=${filterStatus}`);
+    if (searchText) params.push(`search=${encodeURIComponent(searchText)}`);
+    Promise.all([
+      api.fetchMoveOuts(params.join('&')),
+      api.fetchMoveOutStats(),
+      api.fetchResidents(),
+    ]).then(([l, s, r]) => { setList(l); setStats(s); setResidents(r); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [filterStatus, searchText]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const flash = (msg) => { setSuccess(msg); setTimeout(() => setSuccess(''), 3000); };
+
+  // Status change
+  const handleStatusChange = async (id, status) => {
+    try {
+      await api.updateMoveOutStatus(id, status);
+      flash(`Төлөв шинэчлэгдлээ: ${MO_STATUSES[status]}`);
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  // Checklist toggle
+  const handleChecklistToggle = async (id, key, completed) => {
+    try {
+      await api.updateMoveOutChecklist(id, { key, completed });
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  // Generate invoices
+  const handleGenerateInvoices = async (id) => {
+    try {
+      await api.generateMoveOutInvoices(id);
+      flash('Нэхэмжлэхүүд үүсгэгдлээ');
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  // Add invoice
+  const handleAddInvoice = async (id, data) => {
+    try {
+      await api.addMoveOutInvoice(id, data);
+      flash('Нэхэмжлэх нэмэгдлээ');
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  // Pay invoice
+  const handlePayInvoice = async (moveOutId, invoiceId, paid) => {
+    try {
+      await api.updateMoveOutInvoice(moveOutId, invoiceId, { paid });
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  // Delete invoice
+  const handleDeleteInvoice = async (moveOutId, invoiceId) => {
+    try {
+      await api.deleteMoveOutInvoice(moveOutId, invoiceId);
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  // Delete moveout
+  const handleDelete = async (id) => {
+    try {
+      await api.deleteMoveOut(id);
+      flash('Устгалаа');
+      setShowModal(null);
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  // Create moveout
+  const handleCreate = async (data) => {
+    try {
+      await api.createMoveOut({ ...data, building: building?._id });
+      flash('Гарах хүсэлт үүсгэлээ');
+      setShowModal(null);
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  // Test webhook
+  const handleTestWebhook = async (id) => {
+    try {
+      const result = await api.testMoveOutWebhook(id);
+      flash(result.message || 'Webhook илгээгдлээ');
+    } catch (e) { setError(e.message); }
+  };
+
+  // Save webhook settings
+  const handleSaveWebhook = async (id, data) => {
+    try {
+      await api.updateMoveOut(id, data);
+      flash('Webhook тохиргоо хадгалагдлаа');
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  if (loading && list.length === 0) return <PageLoader />;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <ArrowRight size={20} className="text-orange-600" />
+          Байрнаас гарах
+        </h2>
+        <button onClick={() => setShowModal({ mode: 'create' })}
+          className="flex items-center gap-1 bg-orange-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-orange-700">
+          <Plus size={14} /> Шинэ хүсэлт
+        </button>
+      </div>
+
+      {/* Messages */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm p-3 rounded-xl flex items-center gap-2">
+          <AlertTriangle size={16} /> {error}
+          <button onClick={() => setError('')} className="ml-auto"><X size={14} /></button>
+        </div>
+      )}
+      {success && (
+        <div className="bg-green-50 border border-green-200 text-green-700 text-sm p-3 rounded-xl flex items-center gap-2">
+          <CheckCircle2 size={16} /> {success}
+        </div>
+      )}
+
+      {/* Stats */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="rounded-xl border bg-orange-50 text-orange-700 p-3">
+            <p className="text-2xl font-bold">{stats.total}</p>
+            <p className="text-xs opacity-70">Нийт хүсэлт</p>
+          </div>
+          <div className="rounded-xl border bg-yellow-50 text-yellow-700 p-3">
+            <p className="text-2xl font-bold">{(stats.byStatus?.pending || 0) + (stats.byStatus?.checklist || 0) + (stats.byStatus?.invoiced || 0) + (stats.byStatus?.settling || 0)}</p>
+            <p className="text-xs opacity-70">Идэвхтэй</p>
+          </div>
+          <div className="rounded-xl border bg-green-50 text-green-700 p-3">
+            <p className="text-2xl font-bold">{stats.completedThisMonth || 0}</p>
+            <p className="text-xs opacity-70">Энэ сар дууссан</p>
+          </div>
+          <div className="rounded-xl border bg-red-50 text-red-700 p-3">
+            <p className="text-2xl font-bold">{fmt(stats.totalOwed || 0)}</p>
+            <p className="text-xs opacity-70">Үлдэгдэл төлбөр</p>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={searchText} onChange={e => setSearchText(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-orange-500 outline-none"
+            placeholder="Нэр, утас хайх..." />
+        </div>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          className="border rounded-lg px-2 py-2 text-xs bg-white focus:ring-2 focus:ring-orange-500 outline-none">
+          <option value="">Бүх төлөв</option>
+          {Object.entries(MO_STATUSES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </div>
+
+      {/* List */}
+      <div className="space-y-3">
+        {list.map(item => (
+          <div key={item._id} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            {/* Main row */}
+            <div className="p-4">
+              <div className="flex items-start gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${MO_STATUS_COLORS[item.status]}`}>
+                  <ArrowRight size={18} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="font-medium text-sm">{item.residentName}</span>
+                    <span className="text-xs text-gray-400">{item.block}-{item.unit} тоот</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${MO_STATUS_COLORS[item.status]}`}>{MO_STATUSES[item.status]}</span>
+                  </div>
+                  {item.phone && <p className="text-xs text-gray-400 flex items-center gap-1"><Phone size={11} /> {item.phone}</p>}
+                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                    {item.requestDate && <span>Хүсэлт: {item.requestDate}</span>}
+                    {item.plannedDate && <span>Төлөвлөсөн: {item.plannedDate}</span>}
+                    {item.actualDate && <span className="text-green-600">Гарсан: {item.actualDate}</span>}
+                  </div>
+                  {/* Progress bar */}
+                  {item.status !== 'cancelled' && (
+                    <div className="flex items-center gap-1 mt-2">
+                      {MO_STATUS_FLOW.map((st, i) => (
+                        <div key={st} className="flex items-center gap-1">
+                          <div className={`w-5 h-1.5 rounded-full ${MO_STATUS_FLOW.indexOf(item.status) >= i ? 'bg-orange-500' : 'bg-gray-200'}`} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Invoices summary */}
+                  {item.invoices?.length > 0 && (
+                    <div className="mt-2 flex items-center gap-3 text-xs">
+                      <span className="text-gray-500">Нэхэмжлэх: {item.invoices.length}</span>
+                      <span className="font-medium">{fmt(item.totalAmount)}</span>
+                      <span className={item.paidAmount >= item.totalAmount ? 'text-green-600' : 'text-red-600'}>
+                        {item.paidAmount >= item.totalAmount ? 'Бүрэн төлсөн' : `Үлдэгдэл: ${fmt(item.totalAmount - item.paidAmount)}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                {/* Actions */}
+                <div className="flex flex-col gap-1 shrink-0">
+                  <button onClick={() => setShowModal({ mode: 'detail', item })}
+                    className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-lg hover:bg-orange-200 flex items-center gap-1">
+                    <Eye size={12} /> Дэлгэрэнгүй
+                  </button>
+                  {item.status !== 'completed' && item.status !== 'cancelled' && (
+                    <button onClick={() => {
+                      const nextIdx = MO_STATUS_FLOW.indexOf(item.status) + 1;
+                      if (nextIdx < MO_STATUS_FLOW.length) handleStatusChange(item._id, MO_STATUS_FLOW[nextIdx]);
+                    }}
+                      className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-200 flex items-center gap-1">
+                      <ChevronRight size={12} /> Дараагийн
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+        {list.length === 0 && <p className="text-center text-gray-400 py-8 text-sm">Гарах хүсэлт байхгүй байна</p>}
+      </div>
+
+      {/* Modals */}
+      {showModal?.mode === 'create' && (
+        <MoveOutCreateModal
+          residents={residents}
+          onClose={() => setShowModal(null)}
+          onCreate={handleCreate}
+        />
+      )}
+      {showModal?.mode === 'detail' && (
+        <MoveOutDetailModal
+          item={showModal.item}
+          onClose={() => { setShowModal(null); load(); }}
+          onStatusChange={handleStatusChange}
+          onChecklistToggle={handleChecklistToggle}
+          onGenerateInvoices={handleGenerateInvoices}
+          onAddInvoice={handleAddInvoice}
+          onPayInvoice={handlePayInvoice}
+          onDeleteInvoice={handleDeleteInvoice}
+          onDelete={handleDelete}
+          onTestWebhook={handleTestWebhook}
+          onSaveWebhook={handleSaveWebhook}
+          setError={setError}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── MoveOut Create Modal ─── */
+function MoveOutCreateModal({ residents, onClose, onCreate }) {
+  const [selectedResident, setSelectedResident] = useState('');
+  const [plannedDate, setPlannedDate] = useState('');
+  const [depositAmount, setDepositAmount] = useState(0);
+  const [notes, setNotes] = useState('');
+
+  const res = residents.find(r => r._id === selectedResident);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!res) return;
+    onCreate({
+      resident: res._id,
+      residentName: res.name,
+      phone: res.phone,
+      unit: res.unit,
+      block: res.block,
+      residentType: res.type,
+      plannedDate,
+      depositAmount: Number(depositAmount),
+      notes,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="bg-orange-600 text-white px-5 py-4 rounded-t-2xl flex items-center justify-between">
+          <h3 className="font-semibold flex items-center gap-2"><ArrowRight size={18} /> Гарах хүсэлт үүсгэх</h3>
+          <button onClick={onClose} className="text-orange-200 hover:text-white"><X size={18} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Оршин суугч *</label>
+            <select value={selectedResident} onChange={e => setSelectedResident(e.target.value)} required
+              className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-orange-500 outline-none">
+              <option value="">Сонгох...</option>
+              {residents.map(r => (
+                <option key={r._id} value={r._id}>{r.name} ({r.block}-{r.unit})</option>
+              ))}
+            </select>
+          </div>
+          {res && (
+            <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+              <p className="font-medium">{res.name}</p>
+              <p className="text-xs text-gray-500">{res.block}-{res.unit} тоот • {res.type} • {res.phone}</p>
+              {res.car && <p className="text-xs text-gray-500">Машин: {res.car}</p>}
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Төлөвлөсөн гарах өдөр</label>
+            <input type="date" value={plannedDate} onChange={e => setPlannedDate(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Барьцаа мөнгө</label>
+            <input type="number" value={depositAmount} onChange={e => setDepositAmount(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none" placeholder="0" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Тэмдэглэл</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none resize-none" />
+          </div>
+          <button type="submit" className="w-full bg-orange-600 text-white font-medium py-2.5 rounded-lg hover:bg-orange-700 transition">
+            Үүсгэх
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ─── MoveOut Detail Modal ─── */
+function MoveOutDetailModal({ item: initialItem, onClose, onStatusChange, onChecklistToggle, onGenerateInvoices, onAddInvoice, onPayInvoice, onDeleteInvoice, onDelete, onTestWebhook, onSaveWebhook, setError }) {
+  const [item, setItem] = useState(initialItem);
+  const [tab, setTab] = useState('checklist'); // checklist, invoices, api
+  const [addInvLabel, setAddInvLabel] = useState('');
+  const [addInvAmount, setAddInvAmount] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState(item.webhookUrl || '');
+  const [webhookSecret, setWebhookSecret] = useState(item.webhookSecret || '');
+  const [webhookEvents, setWebhookEvents] = useState(item.webhookEvents || []);
+
+  // Refresh item data
+  const refreshItem = async () => {
+    try {
+      const fresh = await api.fetchMoveOut(item._id);
+      setItem(fresh);
+    } catch {}
+  };
+
+  const completedCount = item.checklist?.filter(c => c.completed).length || 0;
+  const totalChecklist = item.checklist?.length || 0;
+  const paidInvoices = item.invoices?.filter(i => i.paid).length || 0;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="bg-orange-600 text-white px-5 py-4 rounded-t-2xl">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold flex items-center gap-2"><ArrowRight size={18} /> Гарах хүсэлт</h3>
+            <button onClick={onClose} className="text-orange-200 hover:text-white"><X size={18} /></button>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-medium">{item.residentName}</span>
+            <span className="text-orange-200">{item.block}-{item.unit} тоот</span>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Status with flow */}
+          <div className="flex items-center gap-1 flex-wrap">
+            {MO_STATUS_FLOW.map((st) => (
+              <button key={st} onClick={() => { onStatusChange(item._id, st); setTimeout(refreshItem, 500); }}
+                className={`text-xs px-2.5 py-1 rounded-full border transition ${item.status === st ? MO_STATUS_COLORS[st] + ' font-bold ring-2 ring-offset-1 ring-orange-300' : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100'}`}>
+                {MO_STATUSES[st]}
+              </button>
+            ))}
+            <button onClick={() => { onStatusChange(item._id, 'cancelled'); setTimeout(refreshItem, 500); }}
+              className={`text-xs px-2.5 py-1 rounded-full border ${item.status === 'cancelled' ? MO_STATUS_COLORS.cancelled + ' font-bold' : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100'}`}>
+              Цуцлах
+            </button>
+          </div>
+
+          {/* Dates */}
+          <div className="flex items-center gap-4 text-xs text-gray-500">
+            {item.requestDate && <span>Хүсэлт: {item.requestDate}</span>}
+            {item.plannedDate && <span>Төлөвлөсөн: {item.plannedDate}</span>}
+            {item.actualDate && <span className="text-green-600 font-medium">Гарсан: {item.actualDate}</span>}
+          </div>
+
+          {/* Summary */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-blue-50 rounded-lg p-2 text-center">
+              <p className="text-xs text-blue-600 font-medium">Шалгалт</p>
+              <p className="text-sm font-bold text-blue-800">{completedCount}/{totalChecklist}</p>
+            </div>
+            <div className="bg-purple-50 rounded-lg p-2 text-center">
+              <p className="text-xs text-purple-600 font-medium">Нэхэмжлэх</p>
+              <p className="text-sm font-bold text-purple-800">{paidInvoices}/{item.invoices?.length || 0}</p>
+            </div>
+            <div className="bg-emerald-50 rounded-lg p-2 text-center">
+              <p className="text-xs text-emerald-600 font-medium">Төлбөр</p>
+              <p className="text-sm font-bold text-emerald-800">{fmt(item.paidAmount || 0)}</p>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-2 border-b pb-2">
+            {[['checklist', `Шалгалт (${completedCount}/${totalChecklist})`], ['invoices', `Нэхэмжлэх (${item.invoices?.length || 0})`], ['api', 'API холболт']].map(([key, label]) => (
+              <button key={key} onClick={() => setTab(key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${tab === key ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Checklist tab */}
+          {tab === 'checklist' && (
+            <div className="space-y-2">
+              {item.checklist?.map(c => (
+                <label key={c.key} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition ${c.completed ? 'bg-green-50 border-green-200' : 'bg-white border-gray-100 hover:bg-gray-50'}`}>
+                  <input type="checkbox" checked={c.completed}
+                    onChange={() => { onChecklistToggle(item._id, c.key, !c.completed); setTimeout(refreshItem, 500); }}
+                    className="mt-0.5 w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500" />
+                  <div className="flex-1">
+                    <p className={`text-sm ${c.completed ? 'line-through text-gray-400' : 'text-gray-700'}`}>{c.label}</p>
+                    {c.completedDate && <p className="text-xs text-green-500 mt-0.5">Хийсэн: {c.completedDate}</p>}
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+
+          {/* Invoices tab */}
+          {tab === 'invoices' && (
+            <div className="space-y-3">
+              {/* Auto generate button */}
+              <button onClick={() => { onGenerateInvoices(item._id); setTimeout(refreshItem, 500); }}
+                className="w-full text-xs bg-purple-100 text-purple-700 px-3 py-2 rounded-lg hover:bg-purple-200 flex items-center justify-center gap-1">
+                <AlertCircle size={14} /> Төлөгдөөгүй төлбөрүүдээс автомат үүсгэх
+              </button>
+
+              {/* Invoice list */}
+              {item.invoices?.map(inv => (
+                <div key={inv._id} className={`flex items-center gap-3 p-3 rounded-xl border ${inv.paid ? 'bg-green-50 border-green-200' : 'bg-white border-gray-100'}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm ${inv.paid ? 'text-gray-400 line-through' : 'text-gray-700 font-medium'}`}>{inv.label}</p>
+                    <p className="text-xs text-gray-500">{fmt(inv.amount)}{inv.paidDate ? ` • Төлсөн: ${inv.paidDate}` : ''}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => { onPayInvoice(item._id, inv._id, !inv.paid); setTimeout(refreshItem, 500); }}
+                      className={`text-xs px-2 py-1 rounded-lg ${inv.paid ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                      {inv.paid ? 'Цуцлах' : 'Төлсөн'}
+                    </button>
+                    <button onClick={() => { onDeleteInvoice(item._id, inv._id); setTimeout(refreshItem, 500); }}
+                      className="text-xs bg-red-50 text-red-500 px-2 py-1 rounded-lg hover:bg-red-100">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {/* Total */}
+              {item.invoices?.length > 0 && (
+                <div className="bg-gray-50 rounded-xl p-3 flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Нийт / Төлсөн</span>
+                  <span className="font-bold">{fmt(item.totalAmount)} / <span className="text-green-600">{fmt(item.paidAmount)}</span></span>
+                </div>
+              )}
+
+              {/* Add invoice */}
+              <div className="border-t pt-3">
+                <p className="text-xs font-medium text-gray-700 mb-2">Нэхэмжлэх нэмэх</p>
+                <div className="flex gap-2">
+                  <input value={addInvLabel} onChange={e => setAddInvLabel(e.target.value)}
+                    className="flex-1 border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-orange-500 outline-none"
+                    placeholder="Нэхэмжлэхийн нэр" />
+                  <input type="number" value={addInvAmount} onChange={e => setAddInvAmount(e.target.value)}
+                    className="w-24 border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-orange-500 outline-none"
+                    placeholder="Дүн" />
+                  <button onClick={() => {
+                    if (!addInvLabel || !addInvAmount) return;
+                    onAddInvoice(item._id, { label: addInvLabel, amount: Number(addInvAmount) });
+                    setAddInvLabel(''); setAddInvAmount('');
+                    setTimeout(refreshItem, 500);
+                  }}
+                    className="bg-orange-600 text-white px-3 py-2 rounded-lg text-xs hover:bg-orange-700">
+                    <Plus size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Deposit section */}
+              {item.depositAmount > 0 && (
+                <div className="bg-amber-50 rounded-xl p-3 border border-amber-200">
+                  <p className="text-sm font-medium text-amber-800">Барьцаа мөнгө: {fmt(item.depositAmount)}</p>
+                  {item.depositNotes && <p className="text-xs text-amber-600 mt-1">{item.depositNotes}</p>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* API tab */}
+          {tab === 'api' && (
+            <div className="space-y-3">
+              <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-200">
+                <p className="text-xs font-medium text-indigo-800 mb-1">API / Webhook холболт</p>
+                <p className="text-xs text-indigo-600">Гадны систем (банк, нягтлан бодох, CRM) руу автоматаар мэдэгдэл илгээнэ.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Webhook URL</label>
+                <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="https://your-system.com/webhook" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Secret Key (нууц түлхүүр)</label>
+                <input value={webhookSecret} onChange={e => setWebhookSecret(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500 outline-none"
+                  placeholder="your-secret-key" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-2">Мэдэгдэх үйл явдлууд</label>
+                <div className="space-y-1">
+                  {[
+                    ['status_changed', 'Төлөв өөрчлөгдөх'],
+                    ['invoice_paid', 'Нэхэмжлэх төлөгдөх'],
+                    ['completed', 'Бүрэн дуусах'],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-2 text-xs">
+                      <input type="checkbox"
+                        checked={webhookEvents.includes(key)}
+                        onChange={e => {
+                          if (e.target.checked) setWebhookEvents([...webhookEvents, key]);
+                          else setWebhookEvents(webhookEvents.filter(ev => ev !== key));
+                        }}
+                        className="w-3.5 h-3.5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={() => onSaveWebhook(item._id, { webhookUrl, webhookSecret, webhookEvents })}
+                  className="flex-1 bg-indigo-600 text-white font-medium py-2 rounded-lg text-xs hover:bg-indigo-700 transition">
+                  Хадгалах
+                </button>
+                {webhookUrl && (
+                  <button onClick={() => onTestWebhook(item._id)}
+                    className="bg-indigo-100 text-indigo-700 font-medium py-2 px-4 rounded-lg text-xs hover:bg-indigo-200 transition">
+                    Тест илгээх
+                  </button>
+                )}
+              </div>
+
+              {item.lastWebhookAt && (
+                <p className="text-xs text-gray-400">Сүүлд илгээсэн: {item.lastWebhookAt}</p>
+              )}
+
+              {/* API Documentation */}
+              <div className="border-t pt-3">
+                <p className="text-xs font-medium text-gray-700 mb-2">API Endpoint жишээ</p>
+                <div className="bg-gray-900 rounded-lg p-3 text-xs font-mono text-green-400 space-y-2 overflow-x-auto">
+                  <p className="text-gray-500"># Гарах хүсэлтийн мэдээлэл авах</p>
+                  <p>GET /api/moveouts/{item._id}</p>
+                  <p className="text-gray-500 mt-2"># Төлөв шинэчлэх</p>
+                  <p>PUT /api/moveouts/{item._id}/status</p>
+                  <p className="text-yellow-300">{'{"status": "completed"}'}</p>
+                  <p className="text-gray-500 mt-2"># Нэхэмжлэх төлсөн гэж тэмдэглэх</p>
+                  <p>PUT /api/moveouts/{item._id}/invoice/:invoiceId</p>
+                  <p className="text-yellow-300">{'{"paid": true}'}</p>
+                  <p className="text-gray-500 mt-2"># Webhook payload жишээ</p>
+                  <p className="text-yellow-300">{`{"event":"status_changed","moveOutId":"${item._id.slice(0, 8)}...","status":"completed","unit":${item.unit},"block":"${item.block}","residentName":"${item.residentName}","totalAmount":${item.totalAmount},"paidAmount":${item.paidAmount},"timestamp":"..."}`}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Footer actions */}
+          <div className="border-t pt-3 flex items-center justify-between">
+            {item.notes && <p className="text-xs text-gray-400 italic flex-1">{item.notes}</p>}
+            <button onClick={() => { if (confirm('Устгах уу?')) onDelete(item._id); }}
+              className="text-xs bg-red-50 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-100 flex items-center gap-1">
+              <Trash2 size={12} /> Устгах
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

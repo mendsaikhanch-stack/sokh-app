@@ -14,6 +14,7 @@ import announcementRoutes from './routes/announcements.js';
 import expenseRoutes from './routes/expenses.js';
 import importRoutes from './routes/import.js';
 import parkingRoutes from './routes/parking.js';
+import moveoutRoutes from './routes/moveouts.js';
 
 dotenv.config();
 
@@ -39,6 +40,7 @@ app.use('/api/announcements', announcementRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/import', importRoutes);
 app.use('/api/parking', parkingRoutes);
+app.use('/api/moveouts', moveoutRoutes);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {

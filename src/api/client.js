@@ -117,3 +117,18 @@ export const fetchExpenses = (params = '') => request(`/expenses${params ? '?' +
 export const createExpense = (data) => request('/expenses', { method: 'POST', body: JSON.stringify(data) });
 export const updateExpense = (id, data) => request(`/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteExpense = (id) => request(`/expenses/${id}`, { method: 'DELETE' });
+
+// MoveOuts (Байрнаас гарах)
+export const fetchMoveOuts = (params = '') => request(`/moveouts${params ? '?' + params : ''}`);
+export const fetchMoveOutStats = () => request('/moveouts/stats');
+export const fetchMoveOut = (id) => request(`/moveouts/${id}`);
+export const createMoveOut = (data) => request('/moveouts', { method: 'POST', body: JSON.stringify(data) });
+export const updateMoveOut = (id, data) => request(`/moveouts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const updateMoveOutStatus = (id, status) => request(`/moveouts/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) });
+export const updateMoveOutChecklist = (id, data) => request(`/moveouts/${id}/checklist`, { method: 'PUT', body: JSON.stringify(data) });
+export const addMoveOutInvoice = (id, data) => request(`/moveouts/${id}/invoice`, { method: 'POST', body: JSON.stringify(data) });
+export const updateMoveOutInvoice = (id, invoiceId, data) => request(`/moveouts/${id}/invoice/${invoiceId}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteMoveOutInvoice = (id, invoiceId) => request(`/moveouts/${id}/invoice/${invoiceId}`, { method: 'DELETE' });
+export const generateMoveOutInvoices = (id) => request(`/moveouts/${id}/generate-invoices`, { method: 'POST' });
+export const testMoveOutWebhook = (id) => request(`/moveouts/${id}/webhook-test`, { method: 'POST' });
+export const deleteMoveOut = (id) => request(`/moveouts/${id}`, { method: 'DELETE' });
