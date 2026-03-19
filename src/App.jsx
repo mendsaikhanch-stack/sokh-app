@@ -4,7 +4,8 @@ import {
   ChevronLeft, MapPin, Phone, Mail, Clock, CheckCircle2, AlertCircle, XCircle,
   Plus, Search, Menu, X, Settings, Users, DollarSign, TrendingUp, Calendar,
   Shield, Car, Hash, ArrowRight, Eye, EyeOff, Loader2, Upload, FileSpreadsheet,
-  Table, ChevronDown, Check, AlertTriangle
+  Table, ChevronDown, Check, AlertTriangle, ParkingSquare, Trash2, Edit3,
+  UserPlus, UserMinus, CircleDollarSign, Filter
 } from 'lucide-react';
 import * as api from './api/client';
 
@@ -71,6 +72,7 @@ export default function App() {
     { id: 'announcements', label: 'Мэдэгдэл', icon: Bell },
     { id: 'requests', label: 'Хүсэлт', icon: Wrench },
     { id: 'expenses', label: 'Зарлага', icon: BarChart3 },
+    ...(user.isAdmin ? [{ id: 'parking', label: 'Зогсоол', icon: Car }] : []),
     ...(user.isAdmin ? [{ id: 'import', label: 'Импорт', icon: Upload }] : []),
     { id: 'profile', label: 'Профайл', icon: User },
   ];
@@ -135,6 +137,7 @@ export default function App() {
           {page === 'announcements' && <AnnouncementsPage user={user} building={building} />}
           {page === 'requests' && <RequestsPage user={user} building={building} />}
           {page === 'expenses' && <ExpensesPage building={building} />}
+          {page === 'parking' && user.isAdmin && <ParkingPage user={user} building={building} />}
           {page === 'import' && user.isAdmin && <ImportPage user={user} building={building} />}
           {page === 'profile' && <ProfilePage user={user} building={building} onLogout={handleLogout} />}
         </main>
@@ -1072,6 +1075,586 @@ function ProfilePage({ user, building, onLogout }) {
         <LogOut size={18} />
         Системээс гарах
       </button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PARKING PAGE (Admin only - Full parking management)
+   ═══════════════════════════════════════════════════════════════════════════ */
+const SPOT_TYPES = { standard: 'Стандарт', covered: 'Бүтээлгээтэй', underground: 'Газар доор', disabled: 'ХБИ', ev: 'Цахилгаан' };
+const SPOT_STATUSES = { available: 'Сул', occupied: 'Эзэмшилтэй', reserved: 'Захиалсан', maintenance: 'Засвартай' };
+const STATUS_COLORS = {
+  available: 'bg-green-100 text-green-700 border-green-200',
+  occupied: 'bg-blue-100 text-blue-700 border-blue-200',
+  reserved: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  maintenance: 'bg-red-100 text-red-700 border-red-200',
+};
+const STAT_ICON_COLORS = {
+  available: 'bg-green-50 text-green-600',
+  occupied: 'bg-blue-50 text-blue-600',
+  reserved: 'bg-yellow-50 text-yellow-600',
+  maintenance: 'bg-red-50 text-red-600',
+};
+
+function ParkingPage({ user, building }) {
+  const [spots, setSpots] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('overview'); // overview, list, grid, add
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterZone, setFilterZone] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [showModal, setShowModal] = useState(null); // null | { mode, spot? }
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const load = useCallback(() => {
+    setLoading(true);
+    const params = [];
+    if (filterStatus) params.push(`status=${filterStatus}`);
+    if (filterZone) params.push(`zone=${filterZone}`);
+    if (searchText) params.push(`search=${encodeURIComponent(searchText)}`);
+    Promise.all([
+      api.fetchParkingSpots(params.join('&')),
+      api.fetchParkingStats(),
+    ]).then(([s, st]) => { setSpots(s); setStats(st); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [filterStatus, filterZone, searchText]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const zones = [...new Set(spots.map(s => s.zone))].sort();
+
+  const flash = (msg) => { setSuccess(msg); setTimeout(() => setSuccess(''), 3000); };
+
+  // Handlers
+  const handleAssign = async (spotId, data) => {
+    try {
+      await api.assignParkingSpot(spotId, data);
+      flash('Зогсоол амжилттай олголоо');
+      setShowModal(null); load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleRelease = async (spotId) => {
+    try {
+      await api.releaseParkingSpot(spotId);
+      flash('Зогсоол чөлөөллөө');
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleDelete = async (spotId) => {
+    try {
+      await api.deleteParkingSpot(spotId);
+      flash('Зогсоол устгалаа');
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleTogglePayment = async (spot) => {
+    try {
+      const now = new Date();
+      const paidUntil = !spot.paid ? `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}` : '';
+      await api.updateParkingPayment(spot._id, { paid: !spot.paid, paidUntil });
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleUpdateSpot = async (spotId, data) => {
+    try {
+      await api.updateParkingSpot(spotId, data);
+      flash('Зогсоол шинэчлэгдлээ');
+      setShowModal(null); load();
+    } catch (e) { setError(e.message); }
+  };
+
+  if (loading && spots.length === 0) return <PageLoader />;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <Car size={20} className="text-blue-600" />
+          Зогсоолын удирдлага
+        </h2>
+        <div className="flex gap-2">
+          <button onClick={() => setShowModal({ mode: 'add' })}
+            className="flex items-center gap-1 bg-blue-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-blue-700">
+            <Plus size={14} /> Нэмэх
+          </button>
+          <button onClick={() => setShowModal({ mode: 'bulk' })}
+            className="flex items-center gap-1 bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-700">
+            <Plus size={14} /> Олноор нэмэх
+          </button>
+        </div>
+      </div>
+
+      {/* Messages */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm p-3 rounded-xl flex items-center gap-2">
+          <AlertTriangle size={16} /> {error}
+          <button onClick={() => setError('')} className="ml-auto"><X size={14} /></button>
+        </div>
+      )}
+      {success && (
+        <div className="bg-green-50 border border-green-200 text-green-700 text-sm p-3 rounded-xl flex items-center gap-2">
+          <CheckCircle2 size={16} /> {success}
+        </div>
+      )}
+
+      {/* Stats overview */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className={`rounded-xl border p-3 ${STAT_ICON_COLORS.available}`}>
+            <p className="text-2xl font-bold">{stats.available}</p>
+            <p className="text-xs opacity-70">Сул зогсоол</p>
+          </div>
+          <div className={`rounded-xl border p-3 ${STAT_ICON_COLORS.occupied}`}>
+            <p className="text-2xl font-bold">{stats.occupied}</p>
+            <p className="text-xs opacity-70">Эзэмшилтэй</p>
+          </div>
+          <div className={`rounded-xl border p-3 ${STAT_ICON_COLORS.reserved}`}>
+            <p className="text-2xl font-bold">{stats.reserved}</p>
+            <p className="text-xs opacity-70">Захиалсан</p>
+          </div>
+          <div className={`rounded-xl border p-3 ${STAT_ICON_COLORS.maintenance}`}>
+            <p className="text-2xl font-bold">{stats.maintenance}</p>
+            <p className="text-xs opacity-70">Засвартай</p>
+          </div>
+        </div>
+      )}
+
+      {/* Revenue card */}
+      {stats && stats.totalMonthlyRevenue > 0 && (
+        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-4 text-white flex items-center justify-between">
+          <div>
+            <p className="text-emerald-200 text-xs">Сарын орлого (зогсоол)</p>
+            <p className="text-xl font-bold mt-0.5">{fmt(stats.totalMonthlyRevenue)}</p>
+          </div>
+          {stats.unpaidCount > 0 && (
+            <div className="bg-white/20 rounded-xl px-3 py-2 text-center">
+              <p className="text-lg font-bold">{stats.unpaidCount}</p>
+              <p className="text-xs text-emerald-200">Төлөөгүй</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex gap-2">
+        {[['overview', 'Бүгд'], ['grid', 'Зураглал'], ['list', 'Жагсаалт']].map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${tab === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={searchText} onChange={e => setSearchText(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 border rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="Дугаар, нэр, машин хайх..." />
+        </div>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          className="border rounded-lg px-2 py-2 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+          <option value="">Бүх төлөв</option>
+          {Object.entries(SPOT_STATUSES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        {zones.length > 1 && (
+          <select value={filterZone} onChange={e => setFilterZone(e.target.value)}
+            className="border rounded-lg px-2 py-2 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+            <option value="">Бүх бүс</option>
+            {zones.map(z => <option key={z} value={z}>{z} бүс</option>)}
+          </select>
+        )}
+      </div>
+
+      {/* Grid View */}
+      {tab === 'grid' && (
+        <div className="space-y-4">
+          {(filterZone ? [filterZone] : zones.length > 0 ? zones : ['A']).map(zone => {
+            const zoneSpots = spots.filter(s => s.zone === zone);
+            if (zoneSpots.length === 0) return null;
+            return (
+              <div key={zone}>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">{zone} бүс ({zoneSpots.length} зогсоол)</h3>
+                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                  {zoneSpots.map(s => (
+                    <button key={s._id} onClick={() => setShowModal({ mode: 'detail', spot: s })}
+                      className={`relative rounded-lg border-2 p-2 text-center transition hover:shadow-md ${STATUS_COLORS[s.status]}`}>
+                      <p className="text-xs font-bold">{s.spotNumber}</p>
+                      {s.status === 'occupied' && (
+                        <p className="text-[10px] truncate mt-0.5">{s.vehiclePlate || s.residentName}</p>
+                      )}
+                      {s.status === 'occupied' && !s.paid && (
+                        <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          {spots.length === 0 && <p className="text-center text-gray-400 py-8 text-sm">Зогсоол бүртгэгдээгүй байна</p>}
+        </div>
+      )}
+
+      {/* List/Overview View */}
+      {(tab === 'overview' || tab === 'list') && (
+        <div className="space-y-2">
+          {spots.map(s => (
+            <div key={s._id} className="bg-white rounded-xl border border-gray-100 p-4">
+              <div className="flex items-start gap-3">
+                {/* Spot icon */}
+                <div className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center text-xs font-bold shrink-0 ${STATUS_COLORS[s.status]}`}>
+                  <ParkingSquare size={16} />
+                  <span className="mt-0.5">{s.spotNumber}</span>
+                </div>
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_COLORS[s.status]}`}>{SPOT_STATUSES[s.status]}</span>
+                    <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full">{s.zone} бүс</span>
+                    <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full">{SPOT_TYPES[s.type]}</span>
+                    {s.monthlyFee > 0 && <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{fmt(s.monthlyFee)}/сар</span>}
+                  </div>
+                  {s.status === 'occupied' && (
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">{s.residentName} {s.unit ? `(${s.block}-${s.unit} тоот)` : ''}</p>
+                      <div className="flex items-center gap-3 text-xs text-gray-500">
+                        {s.vehiclePlate && <span className="flex items-center gap-1"><Car size={12} /> {s.vehiclePlate}</span>}
+                        {s.vehicleModel && <span>{s.vehicleModel}</span>}
+                        {s.vehicleColor && <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full border" style={{ backgroundColor: s.vehicleColor }} /> {s.vehicleColor}</span>}
+                      </div>
+                      {s.residentPhone && <p className="text-xs text-gray-400 flex items-center gap-1"><Phone size={11} /> {s.residentPhone}</p>}
+                      <div className="flex items-center gap-2 mt-1">
+                        {s.paid ? (
+                          <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full flex items-center gap-1"><CheckCircle2 size={11} /> Төлсөн {s.paidUntil && `(${s.paidUntil})`}</span>
+                        ) : (
+                          <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full flex items-center gap-1"><AlertCircle size={11} /> Төлөөгүй</span>
+                        )}
+                        {s.assignedDate && <span className="text-xs text-gray-400">Олгосон: {s.assignedDate}</span>}
+                      </div>
+                    </div>
+                  )}
+                  {s.notes && <p className="text-xs text-gray-500 mt-1 italic">{s.notes}</p>}
+                </div>
+                {/* Actions */}
+                <div className="flex flex-col gap-1 shrink-0">
+                  {s.status === 'available' && (
+                    <button onClick={() => setShowModal({ mode: 'assign', spot: s })}
+                      className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-200 flex items-center gap-1">
+                      <UserPlus size={12} /> Олгох
+                    </button>
+                  )}
+                  {s.status === 'occupied' && (
+                    <>
+                      <button onClick={() => handleTogglePayment(s)}
+                        className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1 ${s.paid ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
+                        <CircleDollarSign size={12} /> {s.paid ? 'Төлбөр цуцлах' : 'Төлсөн'}
+                      </button>
+                      <button onClick={() => handleRelease(s._id)}
+                        className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-lg hover:bg-orange-200 flex items-center gap-1">
+                        <UserMinus size={12} /> Чөлөөлөх
+                      </button>
+                    </>
+                  )}
+                  <button onClick={() => setShowModal({ mode: 'edit', spot: s })}
+                    className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-200 flex items-center gap-1">
+                    <Edit3 size={12} /> Засах
+                  </button>
+                  <button onClick={() => { if (confirm('Устгах уу?')) handleDelete(s._id); }}
+                    className="text-xs bg-red-50 text-red-500 px-2 py-1 rounded-lg hover:bg-red-100 flex items-center gap-1">
+                    <Trash2 size={12} /> Устгах
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {spots.length === 0 && <p className="text-center text-gray-400 py-8 text-sm">Зогсоол бүртгэгдээгүй байна</p>}
+        </div>
+      )}
+
+      {/* Modal */}
+      {showModal && (
+        <ParkingModal
+          mode={showModal.mode}
+          spot={showModal.spot}
+          building={building}
+          onClose={() => { setShowModal(null); setError(''); }}
+          onAssign={handleAssign}
+          onUpdate={handleUpdateSpot}
+          onCreate={(data) => {
+            api.createParkingSpot({ ...data, building: building?._id })
+              .then(() => { flash('Зогсоол нэмэгдлээ'); setShowModal(null); load(); })
+              .catch(e => setError(e.message));
+          }}
+          onBulkCreate={(data) => {
+            api.bulkCreateParkingSpots(data)
+              .then(r => { flash(`${r.length} зогсоол нэмэгдлээ`); setShowModal(null); load(); })
+              .catch(e => setError(e.message));
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── Parking Modal ─── */
+function ParkingModal({ mode, spot, building, onClose, onAssign, onUpdate, onCreate, onBulkCreate }) {
+  // Add single spot
+  const [spotNumber, setSpotNumber] = useState(spot?.spotNumber || '');
+  const [zone, setZone] = useState(spot?.zone || 'A');
+  const [type, setType] = useState(spot?.type || 'standard');
+  const [monthlyFee, setMonthlyFee] = useState(spot?.monthlyFee || 0);
+  const [status, setStatus] = useState(spot?.status || 'available');
+  const [notes, setNotes] = useState(spot?.notes || '');
+
+  // Assign form
+  const [unit, setUnit] = useState(spot?.unit || '');
+  const [block, setBlock] = useState(spot?.block || 'A');
+  const [residentName, setResidentName] = useState(spot?.residentName || '');
+  const [residentPhone, setResidentPhone] = useState(spot?.residentPhone || '');
+  const [vehiclePlate, setVehiclePlate] = useState(spot?.vehiclePlate || '');
+  const [vehicleModel, setVehicleModel] = useState(spot?.vehicleModel || '');
+  const [vehicleColor, setVehicleColor] = useState(spot?.vehicleColor || '');
+
+  // Bulk create
+  const [bulkPrefix, setBulkPrefix] = useState('A');
+  const [bulkFrom, setBulkFrom] = useState(1);
+  const [bulkTo, setBulkTo] = useState(20);
+  const [bulkZone, setBulkZone] = useState('A');
+  const [bulkType, setBulkType] = useState('standard');
+  const [bulkFee, setBulkFee] = useState(0);
+
+  const handleSubmitAdd = (e) => {
+    e.preventDefault();
+    onCreate({ spotNumber, zone, type, monthlyFee: Number(monthlyFee), status, notes });
+  };
+
+  const handleSubmitEdit = (e) => {
+    e.preventDefault();
+    onUpdate(spot._id, { spotNumber, zone, type, monthlyFee: Number(monthlyFee), status, notes });
+  };
+
+  const handleSubmitAssign = (e) => {
+    e.preventDefault();
+    onAssign(spot._id, {
+      unit: Number(unit), block, residentName, residentPhone,
+      vehiclePlate, vehicleModel, vehicleColor,
+    });
+  };
+
+  const handleSubmitBulk = (e) => {
+    e.preventDefault();
+    onBulkCreate({
+      zone: bulkZone, type: bulkType, prefix: bulkPrefix,
+      from: Number(bulkFrom), to: Number(bulkTo), monthlyFee: Number(bulkFee),
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="bg-blue-600 text-white px-5 py-4 rounded-t-2xl flex items-center justify-between">
+          <h3 className="font-semibold flex items-center gap-2">
+            <Car size={18} />
+            {mode === 'add' && 'Зогсоол нэмэх'}
+            {mode === 'edit' && 'Зогсоол засах'}
+            {mode === 'assign' && `${spot?.spotNumber} - Олгох`}
+            {mode === 'bulk' && 'Олноор нэмэх'}
+            {mode === 'detail' && `${spot?.spotNumber} дугаартай зогсоол`}
+          </h3>
+          <button onClick={onClose} className="text-blue-200 hover:text-white"><X size={18} /></button>
+        </div>
+
+        <div className="p-5">
+          {/* Detail view */}
+          {mode === 'detail' && spot && (
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-0.5 rounded-full text-xs border ${STATUS_COLORS[spot.status]}`}>{SPOT_STATUSES[spot.status]}</span>
+                <span className="text-xs text-gray-400">{spot.zone} бүс • {SPOT_TYPES[spot.type]}</span>
+              </div>
+              {spot.status === 'occupied' && (
+                <div className="bg-gray-50 rounded-xl p-3 space-y-1">
+                  <p className="font-medium">{spot.residentName}</p>
+                  {spot.unit > 0 && <p className="text-gray-500 text-xs">{spot.block}-{spot.unit} тоот</p>}
+                  {spot.residentPhone && <p className="text-gray-500 text-xs flex items-center gap-1"><Phone size={11} /> {spot.residentPhone}</p>}
+                  {spot.vehiclePlate && <p className="text-gray-600 flex items-center gap-1"><Car size={13} /> {spot.vehiclePlate} {spot.vehicleModel}</p>}
+                  <p className={`text-xs ${spot.paid ? 'text-green-600' : 'text-red-600'}`}>
+                    {spot.paid ? `Төлсөн (${spot.paidUntil})` : 'Төлбөр төлөөгүй'}
+                  </p>
+                </div>
+              )}
+              {spot.monthlyFee > 0 && <p className="text-gray-500">Сарын төлбөр: <strong>{fmt(spot.monthlyFee)}</strong></p>}
+              {spot.notes && <p className="text-gray-500 italic">{spot.notes}</p>}
+              {spot.assignedDate && <p className="text-gray-400 text-xs">Олгосон: {spot.assignedDate}</p>}
+            </div>
+          )}
+
+          {/* Add / Edit form */}
+          {(mode === 'add' || mode === 'edit') && (
+            <form onSubmit={mode === 'add' ? handleSubmitAdd : handleSubmitEdit} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Дугаар *</label>
+                  <input value={spotNumber} onChange={e => setSpotNumber(e.target.value)} required
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="A-01" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Бүс</label>
+                  <input value={zone} onChange={e => setZone(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="A" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Төрөл</label>
+                  <select value={type} onChange={e => setType(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                    {Object.entries(SPOT_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Сарын төлбөр</label>
+                  <input type="number" value={monthlyFee} onChange={e => setMonthlyFee(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0" />
+                </div>
+              </div>
+              {mode === 'edit' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Төлөв</label>
+                  <select value={status} onChange={e => setStatus(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                    {Object.entries(SPOT_STATUSES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Тэмдэглэл</label>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none" placeholder="Нэмэлт мэдээлэл..." />
+              </div>
+              <button type="submit" className="w-full bg-blue-600 text-white font-medium py-2.5 rounded-lg hover:bg-blue-700 transition">
+                {mode === 'add' ? 'Нэмэх' : 'Хадгалах'}
+              </button>
+            </form>
+          )}
+
+          {/* Assign form */}
+          {mode === 'assign' && (
+            <form onSubmit={handleSubmitAssign} className="space-y-3">
+              <div className="bg-blue-50 rounded-lg p-3 text-sm">
+                <p className="font-medium text-blue-800">Зогсоол: {spot?.spotNumber} ({spot?.zone} бүс)</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Тоот *</label>
+                  <input type="number" value={unit} onChange={e => setUnit(e.target.value)} required
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="101" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Блок</label>
+                  <input value={block} onChange={e => setBlock(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="A" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Эзэмшигчийн нэр *</label>
+                <input value={residentName} onChange={e => setResidentName(e.target.value)} required
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Батболд" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Утас</label>
+                <input value={residentPhone} onChange={e => setResidentPhone(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="99112233" />
+              </div>
+              <div className="border-t pt-3">
+                <p className="text-xs font-medium text-gray-700 mb-2">Машины мэдээлэл</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Улсын дугаар</label>
+                    <input value={vehiclePlate} onChange={e => setVehiclePlate(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="1234 УНА" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Машины марк</label>
+                    <input value={vehicleModel} onChange={e => setVehicleModel(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Prius" />
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <label className="block text-xs text-gray-500 mb-1">Машины өнгө</label>
+                  <input value={vehicleColor} onChange={e => setVehicleColor(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Цагаан" />
+                </div>
+              </div>
+              <button type="submit" className="w-full bg-blue-600 text-white font-medium py-2.5 rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2">
+                <UserPlus size={16} /> Олгох
+              </button>
+            </form>
+          )}
+
+          {/* Bulk create form */}
+          {mode === 'bulk' && (
+            <form onSubmit={handleSubmitBulk} className="space-y-3">
+              <p className="text-xs text-gray-500">Олон зогсоолыг нэг дор үүсгэнэ. Жишээ: A-01, A-02, ... A-20</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Угтвар (prefix)</label>
+                  <input value={bulkPrefix} onChange={e => setBulkPrefix(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="A" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Бүс</label>
+                  <input value={bulkZone} onChange={e => setBulkZone(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="A" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Эхлэх дугаар</label>
+                  <input type="number" value={bulkFrom} onChange={e => setBulkFrom(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Төгсөх дугаар</label>
+                  <input type="number" value={bulkTo} onChange={e => setBulkTo(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Төрөл</label>
+                  <select value={bulkType} onChange={e => setBulkType(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                    {Object.entries(SPOT_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Сарын төлбөр</label>
+                  <input type="number" value={bulkFee} onChange={e => setBulkFee(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0" />
+                </div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
+                Үүсгэх: <strong>{bulkPrefix}-{String(Number(bulkFrom)).padStart(2, '0')}</strong> → <strong>{bulkPrefix}-{String(Number(bulkTo)).padStart(2, '0')}</strong> ({Math.max(0, Number(bulkTo) - Number(bulkFrom) + 1)} ширхэг)
+              </div>
+              <button type="submit" className="w-full bg-green-600 text-white font-medium py-2.5 rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2">
+                <Plus size={16} /> {Math.max(0, Number(bulkTo) - Number(bulkFrom) + 1)} зогсоол үүсгэх
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

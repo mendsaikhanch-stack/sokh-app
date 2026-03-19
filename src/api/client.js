@@ -100,6 +100,18 @@ export function autoDetectColumns(headers, type) {
   return request('/import/auto-detect', { method: 'POST', body: JSON.stringify({ headers, type }) });
 }
 
+// Parking
+export const fetchParkingSpots = (params = '') => request(`/parking${params ? '?' + params : ''}`);
+export const fetchParkingStats = () => request('/parking/stats');
+export const fetchParkingSpot = (id) => request(`/parking/${id}`);
+export const createParkingSpot = (data) => request('/parking', { method: 'POST', body: JSON.stringify(data) });
+export const bulkCreateParkingSpots = (data) => request('/parking/bulk', { method: 'POST', body: JSON.stringify(data) });
+export const updateParkingSpot = (id, data) => request(`/parking/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const assignParkingSpot = (id, data) => request(`/parking/${id}/assign`, { method: 'PUT', body: JSON.stringify(data) });
+export const releaseParkingSpot = (id) => request(`/parking/${id}/release`, { method: 'PUT' });
+export const updateParkingPayment = (id, data) => request(`/parking/${id}/payment`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteParkingSpot = (id) => request(`/parking/${id}`, { method: 'DELETE' });
+
 // Expenses
 export const fetchExpenses = (params = '') => request(`/expenses${params ? '?' + params : ''}`);
 export const createExpense = (data) => request('/expenses', { method: 'POST', body: JSON.stringify(data) });
