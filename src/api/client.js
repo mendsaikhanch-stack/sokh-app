@@ -63,6 +63,43 @@ export const createAnnouncement = (data) => request('/announcements', { method: 
 export const updateAnnouncement = (id, data) => request(`/announcements/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteAnnouncement = (id) => request(`/announcements/${id}`, { method: 'DELETE' });
 
+// Import (Excel)
+export async function parseExcel(file) {
+  const token = getToken();
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${BASE}/import/parse`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.message || 'Parse failed');
+  return data;
+}
+
+export async function executeImport(file, type, sheetName, columnMapping, building) {
+  const token = getToken();
+  const form = new FormData();
+  form.append('file', file);
+  form.append('type', type);
+  form.append('sheetName', sheetName);
+  form.append('columnMapping', JSON.stringify(columnMapping));
+  if (building) form.append('building', building);
+  const res = await fetch(`${BASE}/import/execute`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.message || 'Import failed');
+  return data;
+}
+
+export function autoDetectColumns(headers, type) {
+  return request('/import/auto-detect', { method: 'POST', body: JSON.stringify({ headers, type }) });
+}
+
 // Expenses
 export const fetchExpenses = (params = '') => request(`/expenses${params ? '?' + params : ''}`);
 export const createExpense = (data) => request('/expenses', { method: 'POST', body: JSON.stringify(data) });

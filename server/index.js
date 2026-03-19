@@ -12,6 +12,7 @@ import paymentRoutes from './routes/payments.js';
 import requestRoutes from './routes/requests.js';
 import announcementRoutes from './routes/announcements.js';
 import expenseRoutes from './routes/expenses.js';
+import importRoutes from './routes/import.js';
 
 dotenv.config();
 
@@ -35,6 +36,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/requests', requestRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/expenses', expenseRoutes);
+app.use('/api/import', importRoutes);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {

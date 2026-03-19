@@ -3,7 +3,8 @@ import {
   Building2, Home, CreditCard, Bell, Wrench, BarChart3, User, LogOut, ChevronRight,
   ChevronLeft, MapPin, Phone, Mail, Clock, CheckCircle2, AlertCircle, XCircle,
   Plus, Search, Menu, X, Settings, Users, DollarSign, TrendingUp, Calendar,
-  Shield, Car, Hash, ArrowRight, Eye, EyeOff, Loader2
+  Shield, Car, Hash, ArrowRight, Eye, EyeOff, Loader2, Upload, FileSpreadsheet,
+  Table, ChevronDown, Check, AlertTriangle
 } from 'lucide-react';
 import * as api from './api/client';
 
@@ -70,6 +71,7 @@ export default function App() {
     { id: 'announcements', label: 'Мэдэгдэл', icon: Bell },
     { id: 'requests', label: 'Хүсэлт', icon: Wrench },
     { id: 'expenses', label: 'Зарлага', icon: BarChart3 },
+    ...(user.isAdmin ? [{ id: 'import', label: 'Импорт', icon: Upload }] : []),
     { id: 'profile', label: 'Профайл', icon: User },
   ];
 
@@ -133,6 +135,7 @@ export default function App() {
           {page === 'announcements' && <AnnouncementsPage user={user} building={building} />}
           {page === 'requests' && <RequestsPage user={user} building={building} />}
           {page === 'expenses' && <ExpensesPage building={building} />}
+          {page === 'import' && user.isAdmin && <ImportPage user={user} building={building} />}
           {page === 'profile' && <ProfilePage user={user} building={building} onLogout={handleLogout} />}
         </main>
       </div>
@@ -1069,6 +1072,443 @@ function ProfilePage({ user, building, onLogout }) {
         <LogOut size={18} />
         Системээс гарах
       </button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   IMPORT PAGE (Admin only - Excel file import)
+   ═══════════════════════════════════════════════════════════════════════════ */
+function ImportPage({ user, building }) {
+  const [step, setStep] = useState('upload'); // upload, preview, mapping, importing, done
+  const [file, setFile] = useState(null);
+  const [parseResult, setParseResult] = useState(null);
+  const [selectedSheet, setSelectedSheet] = useState(0);
+  const [importType, setImportType] = useState('residents');
+  const [columnMapping, setColumnMapping] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const TYPE_OPTIONS = [
+    { value: 'residents', label: 'Оршин суугчид', desc: 'Нэр, утас, тоот, блок...' },
+    { value: 'payments', label: 'Төлбөр', desc: 'Тоот, сар, дүн, төлсөн...' },
+    { value: 'expenses', label: 'Зарлага', desc: 'Нэр, дүн, сар...' },
+  ];
+
+  const FIELD_OPTIONS = {
+    residents: [
+      { value: '', label: '-- Алгасах --' },
+      { value: 'name', label: 'Нэр' },
+      { value: 'phone', label: 'Утас' },
+      { value: 'unit', label: 'Тоот' },
+      { value: 'block', label: 'Блок' },
+      { value: 'type', label: 'Төрөл (Owner/Tenant)' },
+      { value: 'regNo', label: 'Регистрийн дугаар' },
+      { value: 'members', label: 'Гишүүд' },
+      { value: 'moveIn', label: 'Нүүсэн огноо' },
+      { value: 'car', label: 'Машин' },
+      { value: 'parking', label: 'Зогсоол' },
+    ],
+    payments: [
+      { value: '', label: '-- Алгасах --' },
+      { value: 'unit', label: 'Тоот' },
+      { value: 'block', label: 'Блок' },
+      { value: 'month', label: 'Сар' },
+      { value: 'label', label: 'Төлбөрийн нэр' },
+      { value: 'amount', label: 'Дүн' },
+      { value: 'paid', label: 'Төлсөн эсэх' },
+      { value: 'paidDate', label: 'Төлсөн огноо' },
+      { value: 'method', label: 'Төлбөрийн арга' },
+    ],
+    expenses: [
+      { value: '', label: '-- Алгасах --' },
+      { value: 'label', label: 'Зарлагын нэр' },
+      { value: 'amount', label: 'Дүн' },
+      { value: 'month', label: 'Сар' },
+      { value: 'icon', label: 'Icon' },
+    ],
+  };
+
+  const handleFile = async (f) => {
+    if (!f) return;
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!['xlsx', 'xls', 'csv'].includes(ext)) {
+      setError('Зөвхөн .xlsx, .xls, .csv файл оруулна уу');
+      return;
+    }
+    setFile(f);
+    setError('');
+    setLoading(true);
+    try {
+      const data = await api.parseExcel(f);
+      setParseResult(data);
+      setSelectedSheet(0);
+      // Auto-detect column mapping
+      if (data.sheets.length > 0) {
+        const headers = data.sheets[0].headers;
+        const detected = await api.autoDetectColumns(headers, importType);
+        setColumnMapping(detected.mapping || {});
+      }
+      setStep('preview');
+    } catch (e) {
+      setError(e.message);
+    }
+    setLoading(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer?.files?.[0];
+    if (f) handleFile(f);
+  };
+
+  const handleTypeChange = async (type) => {
+    setImportType(type);
+    if (parseResult?.sheets?.[selectedSheet]) {
+      const headers = parseResult.sheets[selectedSheet].headers;
+      try {
+        const detected = await api.autoDetectColumns(headers, type);
+        setColumnMapping(detected.mapping || {});
+      } catch {}
+    }
+  };
+
+  const handleSheetChange = async (idx) => {
+    setSelectedSheet(idx);
+    if (parseResult?.sheets?.[idx]) {
+      const headers = parseResult.sheets[idx].headers;
+      try {
+        const detected = await api.autoDetectColumns(headers, importType);
+        setColumnMapping(detected.mapping || {});
+      } catch {}
+    }
+  };
+
+  const handleMappingChange = (colIdx, field) => {
+    setColumnMapping(prev => {
+      const next = { ...prev };
+      if (field) next[colIdx] = field;
+      else delete next[colIdx];
+      return next;
+    });
+  };
+
+  const handleImport = async () => {
+    if (!file || !parseResult) return;
+    const sheet = parseResult.sheets[selectedSheet];
+    if (!sheet) return;
+
+    setLoading(true);
+    setError('');
+    setStep('importing');
+    try {
+      const data = await api.executeImport(
+        file, importType, sheet.name, columnMapping, building?._id
+      );
+      setResult(data);
+      setStep('done');
+    } catch (e) {
+      setError(e.message);
+      setStep('mapping');
+    }
+    setLoading(false);
+  };
+
+  const reset = () => {
+    setStep('upload');
+    setFile(null);
+    setParseResult(null);
+    setColumnMapping({});
+    setError('');
+    setResult(null);
+  };
+
+  const sheet = parseResult?.sheets?.[selectedSheet];
+  const mappedFieldCount = Object.keys(columnMapping).length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+          <FileSpreadsheet size={20} className="text-green-600" />
+          Excel импорт
+        </h2>
+        {step !== 'upload' && (
+          <button onClick={reset} className="text-sm text-blue-600 hover:text-blue-800">
+            Шинээр эхлэх
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm p-3 rounded-xl flex items-center gap-2">
+          <AlertTriangle size={16} /> {error}
+        </div>
+      )}
+
+      {/* Step 1: Upload */}
+      {step === 'upload' && (
+        <div className="space-y-4">
+          {/* Import type selector */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Импортлох өгөгдлийн төрөл</label>
+            <div className="grid grid-cols-3 gap-2">
+              {TYPE_OPTIONS.map(t => (
+                <button key={t.value} onClick={() => setImportType(t.value)}
+                  className={`p-3 rounded-xl border text-left transition ${importType === t.value
+                    ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                    : 'border-gray-200 hover:border-gray-300'}`}>
+                  <p className="text-sm font-medium">{t.label}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{t.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Drop zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-2xl p-10 text-center transition cursor-pointer ${
+              dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
+            }`}
+            onClick={() => document.getElementById('excel-file-input').click()}>
+            <input id="excel-file-input" type="file" accept=".xlsx,.xls,.csv" className="hidden"
+              onChange={e => handleFile(e.target.files?.[0])} />
+            {loading ? (
+              <Loader2 size={40} className="mx-auto animate-spin text-blue-500" />
+            ) : (
+              <>
+                <Upload size={40} className="mx-auto text-gray-400 mb-3" />
+                <p className="text-sm font-medium text-gray-700">Excel файлаа энд чирж оруулна уу</p>
+                <p className="text-xs text-gray-400 mt-1">эсвэл дарж сонгоно уу</p>
+                <p className="text-xs text-gray-400 mt-3">.xlsx, .xls, .csv файл дэмжинэ</p>
+              </>
+            )}
+          </div>
+
+          {/* Help */}
+          <div className="bg-blue-50 rounded-xl border border-blue-100 p-4">
+            <h4 className="text-sm font-medium text-blue-800 mb-2">Excel файлын формат</h4>
+            <div className="text-xs text-blue-700 space-y-1">
+              <p>Файлын эхний мөр нь баганын нэрс байх ёстой. Жишээ:</p>
+              {importType === 'residents' && (
+                <div className="bg-white rounded-lg p-2 mt-2 overflow-x-auto">
+                  <table className="text-xs">
+                    <thead><tr className="text-blue-600">
+                      <th className="pr-4 text-left">Нэр</th><th className="pr-4 text-left">Утас</th>
+                      <th className="pr-4 text-left">Тоот</th><th className="pr-4 text-left">Блок</th>
+                    </tr></thead>
+                    <tbody><tr className="text-gray-600">
+                      <td className="pr-4">Бат</td><td className="pr-4">99112233</td>
+                      <td className="pr-4">101</td><td className="pr-4">A</td>
+                    </tr></tbody>
+                  </table>
+                </div>
+              )}
+              {importType === 'payments' && (
+                <div className="bg-white rounded-lg p-2 mt-2 overflow-x-auto">
+                  <table className="text-xs">
+                    <thead><tr className="text-blue-600">
+                      <th className="pr-4 text-left">Тоот</th><th className="pr-4 text-left">Блок</th>
+                      <th className="pr-4 text-left">Сар</th><th className="pr-4 text-left">Дүн</th>
+                      <th className="pr-4 text-left">Төлсөн</th>
+                    </tr></thead>
+                    <tbody><tr className="text-gray-600">
+                      <td className="pr-4">101</td><td className="pr-4">A</td>
+                      <td className="pr-4">2024.01</td><td className="pr-4">50000</td>
+                      <td className="pr-4">Тийм</td>
+                    </tr></tbody>
+                  </table>
+                </div>
+              )}
+              {importType === 'expenses' && (
+                <div className="bg-white rounded-lg p-2 mt-2 overflow-x-auto">
+                  <table className="text-xs">
+                    <thead><tr className="text-blue-600">
+                      <th className="pr-4 text-left">Нэр</th><th className="pr-4 text-left">Дүн</th>
+                      <th className="pr-4 text-left">Сар</th>
+                    </tr></thead>
+                    <tbody><tr className="text-gray-600">
+                      <td className="pr-4">Цахилгаан</td><td className="pr-4">200000</td>
+                      <td className="pr-4">2024.01</td>
+                    </tr></tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: Preview & Mapping */}
+      {(step === 'preview' || step === 'mapping') && parseResult && (
+        <div className="space-y-4">
+          {/* File info */}
+          <div className="bg-white rounded-xl border p-4 flex items-center gap-3">
+            <FileSpreadsheet size={24} className="text-green-600" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{parseResult.fileName}</p>
+              <p className="text-xs text-gray-500">{parseResult.sheets.length} хуудас</p>
+            </div>
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Уншсан</span>
+          </div>
+
+          {/* Sheet selector */}
+          {parseResult.sheets.length > 1 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Хуудас сонгох</label>
+              <div className="flex gap-2 flex-wrap">
+                {parseResult.sheets.map((s, i) => (
+                  <button key={i} onClick={() => handleSheetChange(i)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                      selectedSheet === i ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}>
+                    {s.name} ({s.totalRows} мөр)
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Import type */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Өгөгдлийн төрөл</label>
+            <div className="flex gap-2">
+              {TYPE_OPTIONS.map(t => (
+                <button key={t.value} onClick={() => handleTypeChange(t.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                    importType === t.value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Column mapping */}
+          {sheet && (
+            <div className="bg-white rounded-xl border p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                  <Table size={16} /> Баганын тохиргоо
+                </h3>
+                <span className="text-xs text-gray-500">{mappedFieldCount} багана тохируулсан</span>
+              </div>
+              <p className="text-xs text-gray-500">Excel-ийн баганыг системийн талбартай холбоно уу:</p>
+              <div className="space-y-2">
+                {sheet.headers.map((h, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <div className="w-1/3 min-w-0">
+                      <span className="text-xs bg-gray-100 px-2 py-1 rounded font-mono truncate block">{h || `Багана ${idx + 1}`}</span>
+                    </div>
+                    <ArrowRight size={14} className="text-gray-400 shrink-0" />
+                    <select
+                      value={columnMapping[idx] || ''}
+                      onChange={e => handleMappingChange(idx, e.target.value)}
+                      className={`flex-1 border rounded-lg px-2 py-1.5 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none ${
+                        columnMapping[idx] ? 'border-green-300 bg-green-50' : 'border-gray-200'
+                      }`}>
+                      {FIELD_OPTIONS[importType].map(f => (
+                        <option key={f.value} value={f.value}>{f.label}</option>
+                      ))}
+                    </select>
+                    {columnMapping[idx] && <Check size={14} className="text-green-500 shrink-0" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Data preview */}
+          {sheet && sheet.rows.length > 0 && (
+            <div className="bg-white rounded-xl border p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-800">
+                Өгөгдлийн урьдчилсан харагдац ({Math.min(sheet.rows.length, 10)}/{sheet.totalRows} мөр)
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr>
+                      <th className="text-left py-1.5 px-2 bg-gray-50 border-b text-gray-500 font-medium">#</th>
+                      {sheet.headers.map((h, i) => (
+                        <th key={i} className="text-left py-1.5 px-2 bg-gray-50 border-b font-medium whitespace-nowrap">
+                          <div>{h}</div>
+                          {columnMapping[i] && (
+                            <span className="text-green-600 font-normal">→ {columnMapping[i]}</span>
+                          )}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sheet.rows.slice(0, 10).map((row, ri) => (
+                      <tr key={ri} className="hover:bg-gray-50">
+                        <td className="py-1.5 px-2 border-b text-gray-400">{ri + 1}</td>
+                        {sheet.headers.map((_, ci) => (
+                          <td key={ci} className={`py-1.5 px-2 border-b whitespace-nowrap max-w-[150px] truncate ${
+                            columnMapping[ci] ? 'text-gray-800' : 'text-gray-400'
+                          }`}>
+                            {row[ci] ?? ''}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Import button */}
+          <div className="flex items-center gap-3">
+            <button onClick={handleImport} disabled={loading || mappedFieldCount === 0}
+              className="flex-1 bg-green-600 text-white font-medium py-3 rounded-xl hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+              {loading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
+              {sheet?.totalRows || 0} мөр импортлох
+            </button>
+            <button onClick={reset} className="px-4 py-3 border rounded-xl text-sm text-gray-600 hover:bg-gray-50">
+              Цуцлах
+            </button>
+          </div>
+
+          {mappedFieldCount === 0 && (
+            <p className="text-xs text-amber-600 text-center">Дор хаяж нэг багана тохируулна уу</p>
+          )}
+        </div>
+      )}
+
+      {/* Step 3: Importing */}
+      {step === 'importing' && (
+        <div className="bg-white rounded-2xl border p-10 text-center">
+          <Loader2 size={48} className="mx-auto animate-spin text-blue-500 mb-4" />
+          <p className="text-lg font-semibold text-gray-800">Импортлож байна...</p>
+          <p className="text-sm text-gray-500 mt-1">Түр хүлээнэ үү</p>
+        </div>
+      )}
+
+      {/* Step 4: Done */}
+      {step === 'done' && result && (
+        <div className="bg-white rounded-2xl border p-8 text-center space-y-4">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+            <CheckCircle2 size={32} className="text-green-600" />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-gray-800">Амжилттай импортлолоо!</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              {result.imported} {result.type === 'residents' ? 'оршин суугч' : result.type === 'payments' ? 'төлбөр' : 'зарлага'} нэмэгдлээ
+            </p>
+          </div>
+          <button onClick={reset}
+            className="bg-blue-600 text-white font-medium px-6 py-2.5 rounded-xl hover:bg-blue-700 transition">
+            Дахин импортлох
+          </button>
+        </div>
+      )}
     </div>
   );
 }
